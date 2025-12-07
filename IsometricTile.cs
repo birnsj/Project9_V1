@@ -18,7 +18,7 @@ namespace Project9
             TileX = tileX;
             TileY = tileY;
             Texture = texture;
-            TintColor = Color.White;
+            TintColor = Microsoft.Xna.Framework.Color.White;
         }
 
         public Vector2 GetScreenPosition()

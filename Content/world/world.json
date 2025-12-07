@@ -1055,7 +1055,7 @@
     {
       "x": 10,
       "y": 10,
-      "terrainType": "Sand"
+      "terrainType": "Water"
     },
     {
       "x": 10,
@@ -1155,17 +1155,17 @@
     {
       "x": 11,
       "y": 10,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 11,
       "y": 11,
-      "terrainType": "Sand"
+      "terrainType": "Water"
     },
     {
       "x": 11,
       "y": 12,
-      "terrainType": "Stone"
+      "terrainType": "Water"
     },
     {
       "x": 11,
@@ -1255,27 +1255,27 @@
     {
       "x": 12,
       "y": 10,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 12,
       "y": 11,
-      "terrainType": "Sand"
+      "terrainType": "Water"
     },
     {
       "x": 12,
       "y": 12,
-      "terrainType": "Sand"
+      "terrainType": "Water"
     },
     {
       "x": 12,
       "y": 13,
-      "terrainType": "Stone"
+      "terrainType": "Water"
     },
     {
       "x": 12,
       "y": 14,
-      "terrainType": "Stone"
+      "terrainType": "Water"
     },
     {
       "x": 12,
@@ -1355,32 +1355,32 @@
     {
       "x": 13,
       "y": 10,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 13,
       "y": 11,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 13,
       "y": 12,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 13,
       "y": 13,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 13,
       "y": 14,
-      "terrainType": "Sand"
+      "terrainType": "Water"
     },
     {
       "x": 13,
       "y": 15,
-      "terrainType": "Sand"
+      "terrainType": "Water"
     },
     {
       "x": 13,
@@ -1455,32 +1455,32 @@
     {
       "x": 14,
       "y": 10,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 14,
       "y": 11,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 14,
       "y": 12,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 14,
       "y": 13,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 14,
       "y": 14,
-      "terrainType": "Sand"
+      "terrainType": "Water"
     },
     {
       "x": 14,
       "y": 15,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 14,
@@ -1570,17 +1570,17 @@
     {
       "x": 15,
       "y": 13,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 15,
       "y": 14,
-      "terrainType": "Forest"
+      "terrainType": "Water"
     },
     {
       "x": 15,
       "y": 15,
-      "terrainType": "Dirt"
+      "terrainType": "Water"
     },
     {
       "x": 15,
@@ -1680,7 +1680,7 @@
     {
       "x": 16,
       "y": 15,
-      "terrainType": "Forest"
+      "terrainType": "Water"
     },
     {
       "x": 16,
