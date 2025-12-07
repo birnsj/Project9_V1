@@ -45,7 +45,7 @@ namespace Project9
         {
             const string mapPath = "Content/world/world.json";
             
-            // Resolve path the same way as the editor - try current directory, then walk up
+            // Resolve path - try current directory, then walk up
             string? resolvedPath = ResolveMapPath(mapPath);
             if (resolvedPath == null)
             {
