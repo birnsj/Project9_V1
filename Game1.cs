@@ -2,6 +2,9 @@ using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Myra;
+using Myra.Graphics2D.UI;
+using Myra.Graphics2D.Brushes;
 
 namespace Project9
 {
@@ -13,6 +16,12 @@ namespace Project9
         private IsometricMap _map = null!;
         private KeyboardState _previousKeyboardState;
         private MouseState _previousMouseState;
+        private Desktop _desktop = null!;
+        private Label _positionLabel = null!;
+        private Label _zoomLabel = null!;
+        private Button _resetButton = null!;
+        private Vector2 _initialCameraPosition;
+        private SpriteFont? _uiFont;
 
         public Game1()
         {
@@ -32,6 +41,21 @@ namespace Project9
             _spriteBatch = new SpriteBatch(GraphicsDevice);
             _map = new IsometricMap(GraphicsDevice);
 
+            // Initialize Myra
+            MyraEnvironment.Game = this;
+
+            // Load font for Myra UI - Myra needs a SpriteFont to render text
+            try
+            {
+                _uiFont = Content.Load<SpriteFont>("Arial");
+            }
+            catch (Exception ex)
+            {
+                // If font loading fails, Myra will try to use default
+                System.Diagnostics.Debug.WriteLine($"Failed to load font: {ex.Message}");
+                _uiFont = null;
+            }
+
             // Center camera on map initially (offset by screen center to properly center the view)
             Vector2 mapCenter = _map.GetMapCenter();
             Vector2 screenCenter = new Vector2(
@@ -39,7 +63,79 @@ namespace Project9
                 GraphicsDevice.Viewport.Height / 2.0f
             );
             // Initial zoom is 1.0, so divide by 1.0 (no change needed)
-            _camera.Position = mapCenter - screenCenter;
+            _initialCameraPosition = mapCenter - screenCenter;
+            _camera.Position = _initialCameraPosition;
+
+            CreateUI();
+        }
+
+        private void CreateUI()
+        {
+            _desktop = new Desktop();
+
+            // Panel background - smaller vertically
+            var panel = new Panel
+            {
+                Width = 250,
+                Height = 80,
+                Background = new SolidBrush(new Microsoft.Xna.Framework.Color(40, 40, 40, 230))
+            };
+
+            // Position label
+            _positionLabel = new Label
+            {
+                Text = "Position: (0, 0)",
+                TextColor = Microsoft.Xna.Framework.Color.White,
+                Left = 10,
+                Top = 10,
+                Width = 230,
+                Padding = new Myra.Graphics2D.Thickness(5)
+            };
+            panel.Widgets.Add(_positionLabel);
+
+            // Zoom label
+            _zoomLabel = new Label
+            {
+                Text = "Zoom: 1.0x",
+                TextColor = Microsoft.Xna.Framework.Color.White,
+                Left = 10,
+                Top = 35,
+                Width = 230,
+                Padding = new Myra.Graphics2D.Thickness(5)
+            };
+            panel.Widgets.Add(_zoomLabel);
+
+            // Create container for panel and button
+            var container = new VerticalStackPanel
+            {
+                Left = 10,
+                Top = 10,
+                Spacing = 5
+            };
+
+            // Add panel to container
+            container.Widgets.Add(panel);
+
+            // Reset button - outside the panel, below it
+            _resetButton = new Button
+            {
+                Content = new Label 
+                { 
+                    Text = "Reset Position",
+                    TextColor = Microsoft.Xna.Framework.Color.White
+                },
+                Width = 150,
+                Height = 35,
+                Padding = new Myra.Graphics2D.Thickness(5)
+            };
+            _resetButton.Click += (s, a) =>
+            {
+                _camera.Position = _initialCameraPosition;
+                _camera.Zoom = 1.0f;
+            };
+            container.Widgets.Add(_resetButton);
+
+            _desktop.Root = container;
         }
 
         protected override void Update(GameTime gameTime)
@@ -83,6 +179,16 @@ namespace Project9
             _previousKeyboardState = currentKeyboardState;
             _previousMouseState = currentMouseState;
 
+            // Update UI information
+            if (_positionLabel != null)
+            {
+                _positionLabel.Text = $"Position: ({_camera.Position.X:F1}, {_camera.Position.Y:F1})";
+            }
+            if (_zoomLabel != null)
+            {
+                _zoomLabel.Text = $"Zoom: {_camera.Zoom:F2}x";
+            }
+
             base.Update(gameTime);
         }
 
@@ -98,6 +204,9 @@ namespace Project9
             _map.Draw(_spriteBatch);
 
             _spriteBatch.End();
+
+            // Draw UI
+            _desktop.Render();
 
             base.Draw(gameTime);
         }

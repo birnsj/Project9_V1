@@ -1,3 +1,24 @@
 #begin Project9/Content.mgcb
 
+#----------------------------- Global Settings ----------------------------#
+
+/outputDir:bin/$(Platform)/$(Configuration)
+/intermediateDir:obj/$(Platform)/$(Configuration)
+/platform:DesktopGL
+/config:
+/profile:Reach
+/compress:False
+
+#-------------------------------- References --------------------------------#
+
+
+#---------------------------------- Content ----------------------------------#
+
+#begin Arial.spritefont
+/importer:FontDescriptionImporter
+/processor:FontDescriptionProcessor
+/build:Arial.spritefont
+
+#end
+
 #end

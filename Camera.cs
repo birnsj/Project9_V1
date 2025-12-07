@@ -41,7 +41,11 @@ namespace Project9
 
         public void Pan(Vector2 direction, float deltaTime)
         {
-            _position += direction * _panSpeed * deltaTime;
+            if (direction.LengthSquared() > 0)
+            {
+                direction.Normalize();
+                _position += direction * _panSpeed * deltaTime;
+            }
         }
 
         public void ZoomIn(float amount)
