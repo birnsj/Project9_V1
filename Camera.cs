@@ -57,5 +57,15 @@ namespace Project9
         {
             Zoom -= amount;
         }
+
+        public void FollowTarget(Vector2 targetPosition, Vector2 screenCenter)
+        {
+            // Calculate desired camera position to keep target centered on screen
+            Vector2 desiredPosition = targetPosition - screenCenter / _zoom;
+            
+            // Smooth camera movement using lerp to reduce jitter
+            float lerpFactor = 0.1f; // Adjust for smoother/faster following (0.1 = smooth, 1.0 = instant)
+            _position = Vector2.Lerp(_position, desiredPosition, lerpFactor);
+        }
     }
 }

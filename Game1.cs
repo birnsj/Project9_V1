@@ -14,6 +14,7 @@ namespace Project9
         private SpriteBatch _spriteBatch = null!;
         private Camera _camera = null!;
         private IsometricMap _map = null!;
+        private Player _player = null!;
         private KeyboardState _previousKeyboardState;
         private MouseState _previousMouseState;
         private Desktop _desktop = null!;
@@ -22,6 +23,8 @@ namespace Project9
         private Button _resetButton = null!;
         private Vector2 _initialCameraPosition;
         private SpriteFont? _uiFont;
+        private Vector2 _screenCenter;
+        private bool _cameraFollowingPlayer = true;
 
         public Game1()
         {
@@ -56,15 +59,20 @@ namespace Project9
                 _uiFont = null;
             }
 
-            // Center camera on map initially (offset by screen center to properly center the view)
-            Vector2 mapCenter = _map.GetMapCenter();
-            Vector2 screenCenter = new Vector2(
+            // Calculate screen center
+            _screenCenter = new Vector2(
                 GraphicsDevice.Viewport.Width / 2.0f,
                 GraphicsDevice.Viewport.Height / 2.0f
             );
-            // Initial zoom is 1.0, so divide by 1.0 (no change needed)
-            _initialCameraPosition = mapCenter - screenCenter;
-            _camera.Position = _initialCameraPosition;
+
+            // Initialize player at map center
+            Vector2 mapCenter = _map.GetMapCenter();
+            _player = new Player(mapCenter);
+
+            // Center camera on player initially (set directly, no lerp on first frame)
+            Vector2 desiredCameraPos = _player.Position - _screenCenter / _camera.Zoom;
+            _camera.Position = desiredCameraPos;
+            _initialCameraPosition = _camera.Position;
 
             CreateUI();
         }
@@ -130,7 +138,11 @@ namespace Project9
             };
             _resetButton.Click += (s, a) =>
             {
-                _camera.Position = _initialCameraPosition;
+                // Reset player to map center
+                Vector2 mapCenter = _map.GetMapCenter();
+                _player.Position = mapCenter;
+                _player.ClearTarget();
+                _camera.FollowTarget(_player.Position, _screenCenter);
                 _camera.Zoom = 1.0f;
             };
             container.Widgets.Add(_resetButton);
@@ -146,10 +158,24 @@ namespace Project9
 
             KeyboardState currentKeyboardState = Keyboard.GetState();
             MouseState currentMouseState = Mouse.GetState();
+            float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
 
-            // Handle WASD input for panning
+            // Handle left Ctrl for sneak mode toggle
+            if (currentKeyboardState.IsKeyDown(Keys.LeftControl) && 
+                !_previousKeyboardState.IsKeyDown(Keys.LeftControl))
+            {
+                _player.ToggleSneak();
+            }
+
+            // Handle space bar to return camera to following player
+            if (currentKeyboardState.IsKeyDown(Keys.Space) && 
+                !_previousKeyboardState.IsKeyDown(Keys.Space))
+            {
+                _cameraFollowingPlayer = true;
+            }
+
+            // Handle WASD for camera panning
             Vector2 panDirection = Vector2.Zero;
-            
             if (currentKeyboardState.IsKeyDown(Keys.W))
                 panDirection.Y -= 1;
             if (currentKeyboardState.IsKeyDown(Keys.S))
@@ -159,10 +185,12 @@ namespace Project9
             if (currentKeyboardState.IsKeyDown(Keys.D))
                 panDirection.X += 1;
 
+            // If WASD is pressed, switch to manual camera mode
             if (panDirection != Vector2.Zero)
             {
+                _cameraFollowingPlayer = false;
                 panDirection.Normalize();
-                _camera.Pan(panDirection, (float)gameTime.ElapsedGameTime.TotalSeconds);
+                _camera.Pan(panDirection, deltaTime);
             }
 
             // Handle mouse wheel for zoom
@@ -174,6 +202,38 @@ namespace Project9
                     _camera.ZoomIn(zoomAmount);
                 else
                     _camera.ZoomOut(Math.Abs(zoomAmount));
+            }
+
+            // Handle mouse input for player movement
+            Vector2 mouseScreenPos = new Vector2(currentMouseState.X, currentMouseState.Y);
+            Vector2 mouseWorldPos = ScreenToWorld(mouseScreenPos);
+
+            // Left click: set target position
+            if (currentMouseState.LeftButton == ButtonState.Pressed && 
+                _previousMouseState.LeftButton == ButtonState.Released)
+            {
+                _player.SetTarget(mouseWorldPos);
+            }
+
+            // Left button held: follow mouse cursor
+            Vector2? followPosition = null;
+            if (currentMouseState.LeftButton == ButtonState.Pressed)
+            {
+                followPosition = mouseWorldPos;
+            }
+            else if (currentMouseState.LeftButton == ButtonState.Released && 
+                     _previousMouseState.LeftButton == ButtonState.Pressed)
+            {
+                // Button released - clear follow but keep target if set
+            }
+
+            // Update player movement
+            _player.Update(followPosition, deltaTime);
+
+            // Update camera - follow player if in follow mode, otherwise manual control
+            if (_cameraFollowingPlayer)
+            {
+                _camera.FollowTarget(_player.Position, _screenCenter);
             }
 
             _previousKeyboardState = currentKeyboardState;
@@ -203,6 +263,9 @@ namespace Project9
 
             _map.Draw(_spriteBatch);
 
+            // Draw player
+            _player.Draw(_spriteBatch);
+
             _spriteBatch.End();
 
             // Draw version number in lower right corner
@@ -224,6 +287,16 @@ namespace Project9
             _desktop.Render();
 
             base.Draw(gameTime);
+        }
+
+        private Vector2 ScreenToWorld(Vector2 screenPosition)
+        {
+            // Convert screen coordinates to world coordinates
+            // Camera transform: Translate(-position) * Scale(zoom)
+            // Inverse transform: Scale(1/zoom) * Translate(position)
+            // So: world = screen / zoom + position
+            Vector2 worldPos = screenPosition / _camera.Zoom + _camera.Position;
+            return worldPos;
         }
     }
 }
