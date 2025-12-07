@@ -14,8 +14,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="Project9.Shared\**" />
+    <EmbeddedResource Remove="Project9.Shared\**" />
+    <None Remove="Project9.Shared\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.1.303" />
     <PackageReference Include="Myra" Version="1.5.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include=".\Project9.Shared\Project9.Shared.csproj" />
   </ItemGroup>
 
 </Project>

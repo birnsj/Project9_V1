@@ -21,4 +21,46 @@
 
 #end
 
+#begin sprites/tiles/template/Grass.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:sprites/tiles/template/Grass.png
+
+#end
+
+#begin sprites/tiles/template/Water.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:sprites/tiles/template/Water.png
+
+#end
+
+#begin sprites/tiles/template/Stone.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:sprites/tiles/template/Stone.png
+
+#end
+
+#begin sprites/tiles/template/Sand.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:sprites/tiles/template/Sand.png
+
+#end
+
+#begin sprites/tiles/template/Forest.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:sprites/tiles/template/Forest.png
+
+#end
+
+#begin sprites/tiles/template/Dirt.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:sprites/tiles/template/Dirt.png
+
+#end
+
 #end

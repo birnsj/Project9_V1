@@ -39,7 +39,7 @@ namespace Project9
         protected override void LoadContent()
         {
             _spriteBatch = new SpriteBatch(GraphicsDevice);
-            _map = new IsometricMap(GraphicsDevice);
+            _map = new IsometricMap(Content, GraphicsDevice);
 
             // Initialize Myra
             MyraEnvironment.Game = this;
