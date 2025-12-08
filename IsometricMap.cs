@@ -17,8 +17,11 @@ namespace Project9
         private int _mapHeight;
         private List<IsometricTile> _tiles;
         private Dictionary<TerrainType, Texture2D> _terrainTextures;
+        private MapData? _mapData;
 
         private GraphicsDevice _graphicsDevice;
+
+        public MapData? MapData => _mapData;
 
         public IsometricMap(ContentManager content, GraphicsDevice graphicsDevice)
         {
@@ -61,6 +64,7 @@ namespace Project9
                     
                     if (mapData != null)
                     {
+                        _mapData = mapData; // Store map data for access to enemies
                         _mapWidth = mapData.Width;
                         _mapHeight = mapData.Height;
                         
@@ -78,7 +82,7 @@ namespace Project9
                             }
                         }
                         
-                        Console.WriteLine($"[IsometricMap] Loaded map from {resolvedPath}: {_mapWidth}x{_mapHeight}, {_tiles.Count} tiles");
+                        Console.WriteLine($"[IsometricMap] Loaded map from {resolvedPath}: {_mapWidth}x{_mapHeight}, {_tiles.Count} tiles, {mapData.Enemies?.Count ?? 0} enemies");
                     }
                     else
                     {

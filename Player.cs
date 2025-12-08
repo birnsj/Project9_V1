@@ -18,6 +18,11 @@ namespace Project9
         private Color _sneakColor;
         private int _size;
         private bool _isSneaking;
+        private float _flashDuration;
+        private float _flashTimer;
+        private float _flashInterval;
+        private float _flashTime;
+        private bool _isFlashing;
 
         public Vector2 Position
         {
@@ -41,6 +46,13 @@ namespace Project9
 
         public bool IsSneaking => _isSneaking;
 
+        public void TakeHit()
+        {
+            _isFlashing = true;
+            _flashTimer = _flashDuration;
+            _flashTime = 0.0f;
+        }
+
         public void ToggleSneak()
         {
             _isSneaking = !_isSneaking;
@@ -61,6 +73,11 @@ namespace Project9
             _color = _normalColor;
             _size = 32;
             _isSneaking = false;
+            _flashDuration = 0.5f; // Total flash duration in seconds
+            _flashTimer = 0.0f;
+            _flashInterval = 0.1f; // Time between flash on/off
+            _flashTime = 0.0f;
+            _isFlashing = false;
         }
 
         public void SetTarget(Vector2 target)
@@ -76,6 +93,20 @@ namespace Project9
 
         public void Update(Vector2? followPosition, float deltaTime)
         {
+            // Update flash timer
+            if (_isFlashing)
+            {
+                _flashTimer -= deltaTime;
+                _flashTime += deltaTime;
+                
+                if (_flashTimer <= 0.0f)
+                {
+                    _isFlashing = false;
+                    _flashTimer = 0.0f;
+                    _flashTime = 0.0f;
+                }
+            }
+
             Vector2? moveTarget = null;
 
             // Priority: follow position (mouse held) > target position (click)
@@ -185,9 +216,22 @@ namespace Project9
                 _texture.SetData(new[] { _color });
             }
 
-            // Draw player centered at position
-            Vector2 drawPosition = _position - new Vector2(_size / 2.0f, _size / 2.0f);
-            spriteBatch.Draw(_texture, new Rectangle((int)drawPosition.X, (int)drawPosition.Y, _size, _size), _color);
+            // Flash effect: alternate visibility when hit
+            bool visible = true;
+            if (_isFlashing)
+            {
+                // Flash on/off based on interval
+                int flashCycle = (int)(_flashTime / _flashInterval);
+                visible = (flashCycle % 2 == 0);
+            }
+
+            if (visible)
+            {
+                // Draw player centered at position
+                Vector2 drawPosition = _position - new Vector2(_size / 2.0f, _size / 2.0f);
+                Color drawColor = _isSneaking ? _sneakColor : _normalColor;
+                spriteBatch.Draw(_texture, new Rectangle((int)drawPosition.X, (int)drawPosition.Y, _size, _size), drawColor);
+            }
         }
     }
 }

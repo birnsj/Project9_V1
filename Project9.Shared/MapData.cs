@@ -18,6 +18,18 @@ namespace Project9.Shared
     }
 
     /// <summary>
+    /// Represents an enemy spawn position in the map for JSON serialization
+    /// </summary>
+    public class EnemyData
+    {
+        [JsonPropertyName("x")]
+        public int X { get; set; }
+
+        [JsonPropertyName("y")]
+        public int Y { get; set; }
+    }
+
+    /// <summary>
     /// Complete map data structure for JSON serialization
     /// </summary>
     public class MapData
@@ -30,6 +42,9 @@ namespace Project9.Shared
 
         [JsonPropertyName("tiles")]
         public List<TileData> Tiles { get; set; } = new List<TileData>();
+
+        [JsonPropertyName("enemies")]
+        public List<EnemyData> Enemies { get; set; } = new List<EnemyData>();
 
         /// <summary>
         /// Creates a default empty map with specified dimensions

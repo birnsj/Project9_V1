@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Myra;
 using Myra.Graphics2D.UI;
 using Myra.Graphics2D.Brushes;
+using Project9.Shared;
 
 namespace Project9
 {
@@ -15,6 +17,7 @@ namespace Project9
         private Camera _camera = null!;
         private IsometricMap _map = null!;
         private Player _player = null!;
+        private List<Enemy> _enemies = new List<Enemy>();
         private KeyboardState _previousKeyboardState;
         private MouseState _previousMouseState;
         private Desktop _desktop = null!;
@@ -68,6 +71,18 @@ namespace Project9
             // Initialize player at map center
             Vector2 mapCenter = _map.GetMapCenter();
             _player = new Player(mapCenter);
+
+            // Load enemies from map data
+            if (_map.MapData?.Enemies != null)
+            {
+                foreach (var enemyData in _map.MapData.Enemies)
+                {
+                    // Convert tile coordinates to world coordinates
+                    var (screenX, screenY) = IsometricMath.TileToScreen(enemyData.X, enemyData.Y);
+                    Vector2 enemyPosition = new Vector2(screenX, screenY);
+                    _enemies.Add(new Enemy(enemyPosition));
+                }
+            }
 
             // Center camera on player initially (set directly, no lerp on first frame)
             Vector2 desiredCameraPos = _player.Position - _screenCenter / _camera.Zoom;
@@ -208,11 +223,37 @@ namespace Project9
             Vector2 mouseScreenPos = new Vector2(currentMouseState.X, currentMouseState.Y);
             Vector2 mouseWorldPos = ScreenToWorld(mouseScreenPos);
 
-            // Left click: set target position
+            // Left click: check if clicking on enemy or ground
             if (currentMouseState.LeftButton == ButtonState.Pressed && 
                 _previousMouseState.LeftButton == ButtonState.Released)
             {
-                _player.SetTarget(mouseWorldPos);
+                // Check if clicking on any enemy (within attack range)
+                float playerAttackRange = 80.0f; // pixels
+                bool attackedEnemy = false;
+                
+                foreach (var enemy in _enemies)
+                {
+                    Vector2 playerToEnemy = enemy.Position - _player.Position;
+                    float distanceToEnemy = playerToEnemy.Length();
+                    
+                    // Check if click is near enemy or if player is close enough to attack
+                    Vector2 clickToEnemy = enemy.Position - mouseWorldPos;
+                    float clickDistanceToEnemy = clickToEnemy.Length();
+                    
+                    if (distanceToEnemy <= playerAttackRange || clickDistanceToEnemy <= 50.0f)
+                    {
+                        // Attack the enemy
+                        enemy.TakeHit();
+                        attackedEnemy = true;
+                        break; // Only attack one enemy per click
+                    }
+                }
+                
+                if (!attackedEnemy)
+                {
+                    // Move to clicked position
+                    _player.SetTarget(mouseWorldPos);
+                }
             }
 
             // Left button held: follow mouse cursor
@@ -224,11 +265,27 @@ namespace Project9
             else if (currentMouseState.LeftButton == ButtonState.Released && 
                      _previousMouseState.LeftButton == ButtonState.Pressed)
             {
-                // Button released - clear follow but keep target if set
+                // Button released - stop the player completely
+                _player.ClearTarget();
             }
 
             // Update player movement
             _player.Update(followPosition, deltaTime);
+
+            // Update all enemies AI (chase and attack player) - pass sneaking state
+            foreach (var enemy in _enemies)
+            {
+                enemy.Update(_player.Position, deltaTime, _player.IsSneaking);
+
+                // Check if enemy hits player
+                Vector2 enemyToPlayer = _player.Position - enemy.Position;
+                float distanceToPlayer = enemyToPlayer.Length();
+                if (enemy.IsAttacking && distanceToPlayer <= enemy.AttackRange)
+                {
+                    _player.TakeHit();
+                    break; // Only take one hit per frame
+                }
+            }
 
             // Update camera - follow player if in follow mode, otherwise manual control
             if (_cameraFollowingPlayer)
@@ -263,6 +320,31 @@ namespace Project9
 
             _map.Draw(_spriteBatch);
 
+            // Draw all enemy aggro radii, sight cones, and enemies
+            foreach (var enemy in _enemies)
+            {
+                // Draw enemy aggro radius (before enemy so it appears behind)
+                // Show effective detection range (half when sneaking, but full if already detected)
+                float effectiveRange;
+                if (enemy.HasDetectedPlayer)
+                {
+                    // Once detected, always show full range
+                    effectiveRange = enemy.DetectionRange;
+                }
+                else
+                {
+                    // Not detected yet - show reduced range when sneaking
+                    effectiveRange = _player.IsSneaking ? enemy.DetectionRange * 0.5f : enemy.DetectionRange;
+                }
+                enemy.DrawAggroRadius(_spriteBatch, effectiveRange);
+                
+                // Draw sight cone (when not chasing)
+                enemy.DrawSightCone(_spriteBatch);
+                
+                // Draw enemy (before player so player appears on top)
+                enemy.Draw(_spriteBatch);
+            }
+
             // Draw player
             _player.Draw(_spriteBatch);
 
@@ -280,6 +362,19 @@ namespace Project9
 
                 _spriteBatch.Begin();
                 _spriteBatch.DrawString(_uiFont, versionText, position, Color.White);
+                
+                // Draw sneak message if player is sneaking
+                if (_player.IsSneaking)
+                {
+                    string sneakText = "SNEAK";
+                    Vector2 sneakTextSize = _uiFont.MeasureString(sneakText);
+                    Vector2 sneakPosition = new Vector2(
+                        GraphicsDevice.Viewport.Width / 2.0f - sneakTextSize.X / 2.0f,
+                        50.0f // Top center of screen
+                    );
+                    _spriteBatch.DrawString(_uiFont, sneakText, sneakPosition, Color.Purple);
+                }
+                
                 _spriteBatch.End();
             }
 
