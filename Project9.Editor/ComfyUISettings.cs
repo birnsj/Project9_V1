@@ -13,7 +13,7 @@ namespace Project9.Editor
         );
 
         public string ServerUrl { get; set; } = "http://localhost:8188";
-        public string ComfyUIPythonPath { get; set; } = "";
+        public string ComfyUIPythonPath { get; set; } = @"F:\ComfyUI\python_embeded\python.exe";
         public string ComfyUIInstallPath { get; set; } = "";
         public bool AutoStartComfyUI { get; set; } = false;
         public string LastWorkflowPath { get; set; } = "";

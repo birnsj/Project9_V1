@@ -413,7 +413,7 @@ namespace Project9
             // Draw version number in lower right corner
             if (_uiFont != null)
             {
-                string versionText = "V001";
+                string versionText = "V002";
                 Vector2 textSize = _uiFont.MeasureString(versionText);
                 Vector2 position = new Vector2(
                     GraphicsDevice.Viewport.Width - textSize.X - 10,

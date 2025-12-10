@@ -234,7 +234,7 @@ namespace Project9.Editor
 
         private void CenterCameraOnMap()
         {
-            if (_mapData.Width == 0 || _mapData.Height == 0)
+            if (_mapData == null || _mapData.Width == 0 || _mapData.Height == 0)
                 return;
 
             // Calculate center of the map in screen coordinates
@@ -243,8 +243,9 @@ namespace Project9.Editor
             var (centerScreenX, centerScreenY) = IsometricMath.TileToScreen((int)centerTileX, (int)centerTileY);
             
             // Offset by control center to properly center the view
-            float screenCenterX = this.Width / 2.0f;
-            float screenCenterY = this.Height / 2.0f;
+            // Use actual control size or default to 800x600 if not yet initialized
+            float screenCenterX = (this.Width > 0 ? this.Width : 800) / 2.0f;
+            float screenCenterY = (this.Height > 0 ? this.Height : 600) / 2.0f;
             
             _camera.Position = new PointF(
                 centerScreenX - screenCenterX / _camera.Zoom,
@@ -750,6 +751,22 @@ namespace Project9.Editor
             g.SmoothingMode = SmoothingMode.None;
             g.InterpolationMode = InterpolationMode.NearestNeighbor;
             g.PixelOffsetMode = PixelOffsetMode.None; // Changed to None for pixel-perfect alignment
+
+            // Check if map data is initialized
+            if (_mapData == null || _mapData.Width == 0 || _mapData.Height == 0)
+            {
+                // Draw loading message or just return (black screen is expected until loaded)
+                using (Font font = new Font("Arial", 14))
+                using (SolidBrush brush = new SolidBrush(Color.White))
+                {
+                    string message = "Loading map...";
+                    SizeF textSize = g.MeasureString(message, font);
+                    float x = (this.Width - textSize.Width) / 2;
+                    float y = (this.Height - textSize.Height) / 2;
+                    g.DrawString(message, font, brush, x, y);
+                }
+                return;
+            }
 
             // Apply camera transform
             Matrix originalTransform = g.Transform;

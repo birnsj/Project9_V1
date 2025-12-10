@@ -100,6 +100,40 @@ namespace Project9.Editor
                     };
                 }
                 
+                // Quick validation check with timeout protection
+                progress?.Report("Validating workflow nodes...");
+                try
+                {
+                    // Run validation with a timeout to prevent hanging
+                    string? validationError = null;
+                    var validationTask = Task.Run(() => ValidateWorkflowNodes(workflowDoc));
+                    
+                    if (validationTask.Wait(TimeSpan.FromSeconds(5)))
+                    {
+                        validationError = validationTask.Result;
+                    }
+                    else
+                    {
+                        // Validation took too long, skip it
+                        progress?.Report("Validation check timed out, skipping detailed validation...");
+                    }
+                    
+                    if (validationError != null)
+                    {
+                        return new ExecutionResult
+                        {
+                            Success = false,
+                            ErrorMessage = validationError
+                        };
+                    }
+                    progress?.Report("Workflow validation complete.");
+                }
+                catch (Exception ex)
+                {
+                    // If validation itself fails, log but continue (workflow might still be valid)
+                    progress?.Report($"Warning: Validation check failed: {ex.Message}. Continuing anyway...");
+                }
+                
                 // Modify workflow to set output directory
                 progress?.Report($"Configuring output directory: {outputDirectory}");
                 JsonElement modifiedWorkflow;
@@ -233,6 +267,98 @@ namespace Project9.Editor
             }
         }
 
+        private string? ValidateWorkflowNodes(JsonDocument workflowDoc)
+        {
+            try
+            {
+                JsonElement root = workflowDoc.RootElement;
+                JsonElement workflowElement = root;
+                
+                // Find the actual workflow data
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    if (root.TryGetProperty("workflow", out JsonElement workflow))
+                    {
+                        workflowElement = workflow;
+                    }
+                    else if (root.TryGetProperty("prompt", out JsonElement prompt))
+                    {
+                        workflowElement = prompt;
+                    }
+                }
+                
+                if (workflowElement.ValueKind == JsonValueKind.Object)
+                {
+                    List<string> invalidNodes = new List<string>();
+                    int nodeCount = 0;
+                    const int maxNodesToCheck = 1000; // Reduced limit for faster validation
+                    const int maxInvalidNodesToReport = 20; // Limit error messages
+                    
+                    foreach (JsonProperty property in workflowElement.EnumerateObject())
+                    {
+                        nodeCount++;
+                        if (nodeCount > maxNodesToCheck)
+                        {
+                            // Too many nodes, skip detailed validation to avoid hanging
+                            // If we've found issues, report them; otherwise assume workflow is valid
+                            break;
+                        }
+                        
+                        // Stop if we've found too many invalid nodes (likely a corrupted file)
+                        if (invalidNodes.Count >= maxInvalidNodesToReport)
+                        {
+                            break;
+                        }
+                        
+                        string nodeId = property.Name;
+                        
+                        // Skip special properties that aren't nodes
+                        if (nodeId.StartsWith("#") || 
+                            nodeId == "extra" || 
+                            nodeId == "version" || 
+                            nodeId == "last_node_id" || 
+                            nodeId == "last_link_id" ||
+                            nodeId == "links" ||
+                            nodeId == "groups")
+                        {
+                            continue;
+                        }
+                        
+                        if (property.Value.ValueKind == JsonValueKind.Object)
+                        {
+                            // Quick check if node has class_type property
+                            if (!property.Value.TryGetProperty("class_type", out JsonElement classType))
+                            {
+                                invalidNodes.Add($"Node ID '{nodeId}' is missing the required 'class_type' property.");
+                            }
+                            else if (classType.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(classType.GetString()))
+                            {
+                                invalidNodes.Add($"Node ID '{nodeId}' has an invalid 'class_type' property (must be a non-empty string).");
+                            }
+                        }
+                    }
+                    
+                    if (invalidNodes.Count > 0)
+                    {
+                        return $"Invalid workflow: The following nodes are missing or have invalid 'class_type' properties:\n\n" +
+                               string.Join("\n", invalidNodes) +
+                               "\n\nPlease ensure all nodes in your workflow have a valid 'class_type' property.\n" +
+                               "This usually happens when:\n" +
+                               "1. The workflow file is corrupted or incomplete\n" +
+                               "2. The workflow was exported incorrectly\n" +
+                               "3. The workflow contains placeholder nodes that weren't properly configured\n\n" +
+                               "Try re-exporting the workflow from ComfyUI or fixing the workflow file manually.";
+                    }
+                }
+                
+                return null; // Validation passed
+            }
+            catch (Exception ex)
+            {
+                return $"Error validating workflow: {ex.Message}\n\nPlease check that the workflow file is valid JSON.";
+            }
+        }
+
         private JsonElement ModifyWorkflowOutputDirectory(JsonDocument workflowDoc, string outputDirectory)
         {
             try
@@ -304,8 +430,29 @@ namespace Project9.Editor
                     {
                         try
                         {
+                            string nodeId = property.Name;
+                            
+                            // Skip invalid node IDs (placeholders, metadata, etc.)
+                            if (nodeId.StartsWith("#") || 
+                                nodeId == "extra" || 
+                                nodeId == "version" || 
+                                nodeId == "last_node_id" || 
+                                nodeId == "last_link_id")
+                            {
+                                continue; // Skip metadata and placeholder nodes
+                            }
+                            
                             if (property.Value.ValueKind == JsonValueKind.Object)
                             {
+                                // Check if node has class_type - skip if missing (invalid node)
+                                if (!property.Value.TryGetProperty("class_type", out JsonElement classTypeCheck) ||
+                                    classTypeCheck.ValueKind != JsonValueKind.String ||
+                                    string.IsNullOrWhiteSpace(classTypeCheck.GetString()))
+                                {
+                                    // Skip invalid nodes (missing class_type)
+                                    continue;
+                                }
+                                
                                 // Parse node to check if it's SaveImage
                                 Dictionary<string, object> node = new Dictionary<string, object>();
                                 bool isSaveImage = false;

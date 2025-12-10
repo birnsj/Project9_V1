@@ -25,11 +25,24 @@ namespace Project9.Editor
         private ToolStripButton? _collisionButton = null!;
         private TrackBar? _opacitySlider = null;
         private ComfyUISettings _comfyUISettings = null!;
+        private ComfyUIServerManager? _autoStartedServerManager = null;
 
         public EditorForm()
         {
             InitializeComponent();
+            this.FormClosing += EditorForm_FormClosing;
             InitializeEditor();
+        }
+
+        private void EditorForm_FormClosing(object? sender, FormClosingEventArgs e)
+        {
+            // Shut down auto-started ComfyUI if enabled
+            if (_comfyUISettings?.AutoStartComfyUI == true && _autoStartedServerManager != null)
+            {
+                _autoStartedServerManager.StopServer();
+                _autoStartedServerManager.Dispose();
+                _autoStartedServerManager = null;
+            }
         }
 
         private void InitializeComponent()
@@ -211,6 +224,12 @@ namespace Project9.Editor
             // Load ComfyUI settings
             _comfyUISettings = ComfyUISettings.Load();
             
+            // Auto-start ComfyUI if enabled
+            if (_comfyUISettings.AutoStartComfyUI)
+            {
+                await AutoStartComfyUIAsync();
+            }
+            
             // Initialize map data and texture loader
             _mapData = new EditorMapData();
             _textureLoader = new TileTextureLoader();
@@ -224,11 +243,45 @@ namespace Project9.Editor
             // Initialize map render control
             _mapRenderControl.Initialize(_mapData, _textureLoader);
             
+            // Force a redraw after initialization
+            _mapRenderControl.Invalidate();
+            
             // Start status update timer
             _statusUpdateTimer = new System.Windows.Forms.Timer();
             _statusUpdateTimer.Interval = 100; // Update every 100ms
             _statusUpdateTimer.Tick += StatusUpdateTimer_Tick;
             _statusUpdateTimer.Start();
+        }
+
+        private async Task AutoStartComfyUIAsync()
+        {
+            try
+            {
+                // Check if paths are configured
+                if (string.IsNullOrEmpty(_comfyUISettings.ComfyUIPythonPath) || 
+                    string.IsNullOrEmpty(_comfyUISettings.ComfyUIInstallPath))
+                {
+                    // Paths not configured, skip auto-start
+                    return;
+                }
+
+                // Create server manager
+                _autoStartedServerManager = new ComfyUIServerManager(
+                    _comfyUISettings.ServerUrl,
+                    _comfyUISettings.ComfyUIPythonPath,
+                    _comfyUISettings.ComfyUIInstallPath
+                );
+
+                // Try to start server (silently, no progress reporting for auto-start)
+                var progress = new Progress<string>(status => { /* Silent auto-start */ });
+                await _autoStartedServerManager.EnsureServerRunningAsync(progress);
+            }
+            catch
+            {
+                // If auto-start fails, silently continue - user can start manually
+                _autoStartedServerManager?.Dispose();
+                _autoStartedServerManager = null;
+            }
         }
 
         private void StatusUpdateTimer_Tick(object? sender, EventArgs e)
@@ -324,7 +377,7 @@ namespace Project9.Editor
 
         private void AboutMenu_Click(object? sender, EventArgs e)
         {
-            MessageBox.Show("Project 9 V001", "About", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Project 9 V002", "About", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void ShowGridCheckBox_CheckedChanged(object? sender, EventArgs e)
@@ -616,6 +669,14 @@ namespace Project9.Editor
         {
             if (disposing)
             {
+                // Shut down auto-started ComfyUI if enabled
+                if (_comfyUISettings?.AutoStartComfyUI == true && _autoStartedServerManager != null)
+                {
+                    _autoStartedServerManager.StopServer();
+                    _autoStartedServerManager.Dispose();
+                    _autoStartedServerManager = null;
+                }
+
                 _statusUpdateTimer?.Stop();
                 _statusUpdateTimer?.Dispose();
                 _textureLoader?.Dispose();
