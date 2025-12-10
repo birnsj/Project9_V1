@@ -46,7 +46,8 @@ namespace Project9
         private float _stuckTimer; // Timer to detect if enemy is stuck
         private int _preferredSlideDirection; // -1 for left, 1 for right, 0 for no preference
         private const float STUCK_THRESHOLD = 0.5f; // Seconds before considering stuck
-        private const float GRID_SIZE = 16.0f; // Grid cell size for pathfinding (balanced precision)
+        private const float GRID_CELL_SIZE = 64.0f; // 64x32 grid cell size (matches Player and collision cells)
+        private const float GRID_CELL_HEIGHT = 32.0f;
 
         public Vector2 Position
         {
@@ -278,7 +279,7 @@ namespace Project9
                     else if (pathClear)
                     {
                         // Clear path - clear any existing pathfinding path
-                        _path = new List<Vector2>();
+                        _path?.Clear(); // Reuse existing list to avoid allocation
                     }
                     
                     // Use pathfinding path if available
@@ -489,7 +490,7 @@ namespace Project9
                     else if (pathClear)
                     {
                         // Clear path - clear any existing pathfinding path
-                        _path = new List<Vector2>();
+                        _path?.Clear(); // Reuse existing list to avoid allocation
                     }
                     
                     // Use pathfinding path if available
@@ -1102,16 +1103,22 @@ namespace Project9
         {
             List<Vector2> path = new List<Vector2>();
             
-            // Simple A* pathfinding on a grid
+            // Simple A* pathfinding on 64x32 grid (matches Player)
             // Convert positions to grid coordinates
-            int startGridX = (int)(start.X / GRID_SIZE);
-            int startGridY = (int)(start.Y / GRID_SIZE);
-            int endGridX = (int)(end.X / GRID_SIZE);
-            int endGridY = (int)(end.Y / GRID_SIZE);
+            int startGridX = (int)Math.Round(start.X / GRID_CELL_SIZE);
+            int startGridY = (int)Math.Round(start.Y / GRID_CELL_HEIGHT);
+            int endGridX = (int)Math.Round(end.X / GRID_CELL_SIZE);
+            int endGridY = (int)Math.Round(end.Y / GRID_CELL_HEIGHT);
+            
+            // If start and end are in the same or adjacent cells, just return direct path
+            if (Math.Abs(startGridX - endGridX) <= 1 && Math.Abs(startGridY - endGridY) <= 1)
+            {
+                return new List<Vector2> { end };
+            }
             
             // If start and end are very close, just return direct path
             float directDistance = Vector2.Distance(start, end);
-            if (directDistance < GRID_SIZE * 2)
+            if (directDistance < GRID_CELL_SIZE * 2)
             {
                 // Check if direct path is clear
                 bool pathClear = true;
@@ -1133,43 +1140,44 @@ namespace Project9
                 }
             }
             
-            // A* pathfinding
-            var openSet = new HashSet<(int x, int y)>();
+            // A* pathfinding using PriorityQueue for efficiency
+            var openSet = new PriorityQueue<(int x, int y), float>();
+            var openSetLookup = new HashSet<(int x, int y)>(); // For fast Contains checks
             var closedSet = new HashSet<(int x, int y)>();
             var cameFrom = new Dictionary<(int x, int y), (int x, int y)>();
             var gScore = new Dictionary<(int x, int y), float>();
-            var fScore = new Dictionary<(int x, int y), float>();
             
             (int x, int y) startNode = (startGridX, startGridY);
             (int x, int y) endNode = (endGridX, endGridY);
             
-            openSet.Add(startNode);
+            float startF = Heuristic(startNode, endNode);
+            openSet.Enqueue(startNode, startF);
+            openSetLookup.Add(startNode);
             gScore[startNode] = 0;
-            fScore[startNode] = Heuristic(startNode, endNode);
             
             // Limit search to reasonable area (max distance in pixels, then convert to grid cells)
             float maxSearchDistance = 800.0f; // Max search distance in pixels
-            int maxSearchRadius = (int)(maxSearchDistance / GRID_SIZE);
+            int maxSearchRadius = (int)(maxSearchDistance / GRID_CELL_SIZE);
             
-            // Limit iterations to prevent performance issues
-            int maxIterations = 2000;
+            // Limit iterations to prevent performance issues (reduced for larger grid)
+            int maxIterations = 500; // Reduced since we're using larger cells
             int iterations = 0;
             
             while (openSet.Count > 0 && iterations < maxIterations)
             {
                 iterations++;
                 
-                // Find node with lowest fScore
-                (int x, int y) current = openSet.OrderBy(n => fScore.GetValueOrDefault(n, float.MaxValue)).First();
+                // Get node with lowest fScore (O(log n) instead of O(n))
+                (int x, int y) current = openSet.Dequeue();
+                openSetLookup.Remove(current);
                 
                 if (current.x == endNode.x && current.y == endNode.y)
                 {
-                    // Reconstruct path
-                    path = ReconstructPath(cameFrom, current, start, end, GRID_SIZE);
+                    // Reconstruct path using grid cell centers
+                    path = ReconstructPath(cameFrom, current, start, end, GRID_CELL_SIZE, GRID_CELL_HEIGHT);
                     break;
                 }
                 
-                openSet.Remove(current);
                 closedSet.Add(current);
                 
                 // Check neighbors (8 directions)
@@ -1189,53 +1197,32 @@ namespace Project9
                         if (closedSet.Contains(neighbor))
                             continue;
                         
-                        // Check if neighbor is walkable
-                        Vector2 neighborWorldPos = new Vector2(neighbor.x * GRID_SIZE, neighbor.y * GRID_SIZE);
-                        if (checkCollision(neighborWorldPos))
+                        // Check if neighbor grid cell is walkable (check center of cell)
+                        Vector2 neighborCellCenter = new Vector2(neighbor.x * GRID_CELL_SIZE, neighbor.y * GRID_CELL_HEIGHT);
+                        if (checkCollision(neighborCellCenter))
                             continue;
                         
                         float tentativeGScore = gScore.GetValueOrDefault(current, float.MaxValue) + 
                                                (dx != 0 && dy != 0 ? 1.414f : 1.0f); // Diagonal cost
                         
-                        if (!openSet.Contains(neighbor))
-                            openSet.Add(neighbor);
-                        else if (tentativeGScore >= gScore.GetValueOrDefault(neighbor, float.MaxValue))
+                        if (tentativeGScore >= gScore.GetValueOrDefault(neighbor, float.MaxValue))
                             continue;
                         
+                        // This path to neighbor is better than any previous one
                         cameFrom[neighbor] = current;
                         gScore[neighbor] = tentativeGScore;
-                        fScore[neighbor] = tentativeGScore + Heuristic(neighbor, endNode);
-                    }
-                }
-            }
-            
-            // If no path found, return empty list
-            if (path.Count == 0)
-            {
-                // Try to find at least one waypoint that gets closer
-                for (int radius = 1; radius <= 10; radius++)
-                {
-                    for (int dx = -radius; dx <= radius; dx++)
-                    {
-                        for (int dy = -radius; dy <= radius; dy++)
+                        float fScoreNeighbor = tentativeGScore + Heuristic(neighbor, endNode);
+                        
+                        if (!openSetLookup.Contains(neighbor))
                         {
-                            if (dx == 0 && dy == 0) continue;
-                            
-                            Vector2 candidate = new Vector2((startGridX + dx) * GRID_SIZE, (startGridY + dy) * GRID_SIZE);
-                            if (!checkCollision(candidate))
-                            {
-                                float distToEnd = Vector2.Distance(candidate, end);
-                                float distFromStart = Vector2.Distance(start, end);
-                                if (distToEnd < distFromStart * 1.2f)
-                                {
-                                    return new List<Vector2> { candidate };
-                                }
-                            }
+                            openSet.Enqueue(neighbor, fScoreNeighbor);
+                            openSetLookup.Add(neighbor);
                         }
                     }
                 }
             }
             
+            // If no path found, return empty list (will use wall sliding)
             return path;
         }
         
@@ -1251,7 +1238,8 @@ namespace Project9
                                                (int x, int y) current, 
                                                Vector2 start, 
                                                Vector2 end, 
-                                               float gridSize)
+                                               float gridSizeX, 
+                                               float gridSizeY)
         {
             List<Vector2> path = new List<Vector2>();
             path.Add(end); // Add final destination
@@ -1259,7 +1247,7 @@ namespace Project9
             while (cameFrom.ContainsKey(current))
             {
                 current = cameFrom[current];
-                Vector2 worldPos = new Vector2(current.x * gridSize, current.y * gridSize);
+                Vector2 worldPos = new Vector2(current.x * gridSizeX, current.y * gridSizeY);
                 path.Insert(0, worldPos);
             }
             

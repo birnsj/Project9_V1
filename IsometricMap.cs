@@ -126,6 +126,9 @@ namespace Project9
                 Console.WriteLine($"[IsometricMap] Map file not found at {resolvedPath}, creating default map");
                 CreateDefaultMap();
             }
+            
+            // Pre-sort tiles once after loading (tiles are static and never move)
+            SortTiles();
         }
         
         private static string? ResolveMapPath(string relativePath)
@@ -175,14 +178,10 @@ namespace Project9
             }
         }
 
-
-
-        public void Draw(SpriteBatch spriteBatch)
+        private void SortTiles()
         {
-            // Draw tiles in proper order (back to front)
-            // Sort by screen Y position to ensure correct depth
-            var sortedTiles = new List<IsometricTile>(_tiles);
-            sortedTiles.Sort((a, b) =>
+            // Sort tiles once by screen position for proper rendering order (back to front)
+            _tiles.Sort((a, b) =>
             {
                 Vector2 posA = a.GetScreenPosition();
                 Vector2 posB = b.GetScreenPosition();
@@ -190,8 +189,15 @@ namespace Project9
                 if (compareY != 0) return compareY;
                 return posA.X.CompareTo(posB.X);
             });
+        }
 
-            foreach (var tile in sortedTiles)
+
+
+        public void Draw(SpriteBatch spriteBatch)
+        {
+            // Draw tiles in proper order (back to front)
+            // Tiles are pre-sorted once at load time since they're static
+            foreach (var tile in _tiles)
             {
                 tile.Draw(spriteBatch);
             }

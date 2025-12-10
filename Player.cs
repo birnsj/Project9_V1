@@ -99,7 +99,7 @@ namespace Project9
         {
             _targetPosition = target;
             _waypoint = null; // Clear waypoint when setting new target
-            _path = new List<Vector2>();
+            _path?.Clear(); // Reuse existing list to avoid allocation
             _stuckTimer = 0.0f;
             _preferredSlideDirection = 0; // Reset slide preference on new target
             
@@ -136,7 +136,7 @@ namespace Project9
         {
             _targetPosition = null;
             _waypoint = null;
-            _path = new List<Vector2>();
+            _path.Clear(); // Reuse existing list to avoid allocation
             _currentSpeed = 0.0f;
             _stuckTimer = 0.0f;
         }
@@ -395,7 +395,7 @@ namespace Project9
                         _position = moveTarget.Value;
                         _targetPosition = null;
                         _waypoint = null;
-                        _path = new List<Vector2>();
+                        _path?.Clear(); // Reuse existing list to avoid allocation
                         _currentSpeed = 0.0f;
                     }
                 }
@@ -519,19 +519,20 @@ namespace Project9
                 return new List<Vector2> { end };
             }
             
-            // Simple A* pathfinding on 64x32 grid cells
-            var openSet = new HashSet<(int x, int y)>();
+            // Simple A* pathfinding on 64x32 grid cells using PriorityQueue for efficiency
+            var openSet = new PriorityQueue<(int x, int y), float>();
+            var openSetLookup = new HashSet<(int x, int y)>(); // For fast Contains checks
             var closedSet = new HashSet<(int x, int y)>();
             var cameFrom = new Dictionary<(int x, int y), (int x, int y)>();
             var gScore = new Dictionary<(int x, int y), float>();
-            var fScore = new Dictionary<(int x, int y), float>();
             
             (int x, int y) startNode = (startGridX, startGridY);
             (int x, int y) endNode = (endGridX, endGridY);
             
-            openSet.Add(startNode);
+            float startF = Heuristic(startNode, endNode);
+            openSet.Enqueue(startNode, startF);
+            openSetLookup.Add(startNode);
             gScore[startNode] = 0;
-            fScore[startNode] = Heuristic(startNode, endNode);
             
             // Limit search to reasonable area
             float maxSearchDistance = 800.0f;
@@ -543,8 +544,9 @@ namespace Project9
             {
                 iterations++;
                 
-                // Find node with lowest fScore
-                (int x, int y) current = openSet.OrderBy(n => fScore.GetValueOrDefault(n, float.MaxValue)).First();
+                // Get node with lowest fScore (O(log n) instead of O(n))
+                (int x, int y) current = openSet.Dequeue();
+                openSetLookup.Remove(current);
                 
                 if (current.x == endNode.x && current.y == endNode.y)
                 {
@@ -553,7 +555,6 @@ namespace Project9
                     break;
                 }
                 
-                openSet.Remove(current);
                 closedSet.Add(current);
                 
                 // Check neighbors (8 directions for isometric grid)
@@ -581,14 +582,19 @@ namespace Project9
                         float tentativeGScore = gScore.GetValueOrDefault(current, float.MaxValue) + 
                                                (dx != 0 && dy != 0 ? 1.414f : 1.0f); // Diagonal cost
                         
-                        if (!openSet.Contains(neighbor))
-                            openSet.Add(neighbor);
-                        else if (tentativeGScore >= gScore.GetValueOrDefault(neighbor, float.MaxValue))
+                        if (tentativeGScore >= gScore.GetValueOrDefault(neighbor, float.MaxValue))
                             continue;
                         
+                        // This path to neighbor is better than any previous one
                         cameFrom[neighbor] = current;
                         gScore[neighbor] = tentativeGScore;
-                        fScore[neighbor] = tentativeGScore + Heuristic(neighbor, endNode);
+                        float fScoreNeighbor = tentativeGScore + Heuristic(neighbor, endNode);
+                        
+                        if (!openSetLookup.Contains(neighbor))
+                        {
+                            openSet.Enqueue(neighbor, fScoreNeighbor);
+                            openSetLookup.Add(neighbor);
+                        }
                     }
                 }
             }

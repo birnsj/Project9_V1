@@ -33,6 +33,8 @@ namespace Project9
         private bool _showCollision = true; // Default to showing collision
         private Texture2D? _gridLineTexture;
         private List<CollisionCellData> _collisionCells = new List<CollisionCellData>();
+        private Dictionary<(int, int), List<CollisionCellData>> _collisionGrid = new Dictionary<(int, int), List<CollisionCellData>>();
+        private const float COLLISION_GRID_SIZE = 128.0f; // Spatial hash grid size for fast collision lookups
         private Texture2D? _collisionDiamondTexture;
 
         public Game1()
@@ -469,6 +471,9 @@ namespace Project9
                     {
                         _collisionCells = collisionData.Cells;
                         Console.WriteLine($"[Game1] Loaded {_collisionCells.Count} collision cells");
+                        
+                        // Build spatial hash grid for fast collision lookups
+                        BuildCollisionGrid();
                     }
                 }
                 catch (Exception ex)
@@ -476,6 +481,27 @@ namespace Project9
                     Console.WriteLine($"[Game1] Error loading collision cells: {ex.Message}");
                 }
             }
+        }
+        
+        private void BuildCollisionGrid()
+        {
+            _collisionGrid.Clear();
+            
+            foreach (var cell in _collisionCells)
+            {
+                // Calculate grid coordinates for this collision cell
+                int gridX = (int)(cell.X / COLLISION_GRID_SIZE);
+                int gridY = (int)(cell.Y / COLLISION_GRID_SIZE);
+                
+                var key = (gridX, gridY);
+                if (!_collisionGrid.ContainsKey(key))
+                {
+                    _collisionGrid[key] = new List<CollisionCellData>();
+                }
+                _collisionGrid[key].Add(cell);
+            }
+            
+            Console.WriteLine($"[Game1] Built collision grid with {_collisionGrid.Count} regions");
         }
 
         private static string? ResolveCollisionPath(string relativePath)
@@ -518,21 +544,37 @@ namespace Project9
                 new Vector2(position.X - halfWidth, position.Y)  // Left
             };
 
-            foreach (var cell in _collisionCells)
+            // Calculate grid region for the position
+            int gridX = (int)(position.X / COLLISION_GRID_SIZE);
+            int gridY = (int)(position.Y / COLLISION_GRID_SIZE);
+            
+            // Check current grid cell and neighboring cells (to handle edge cases)
+            for (int dx = -1; dx <= 1; dx++)
             {
-                // Check if any of the player's key points are inside the collision cell diamond
-                foreach (var checkPoint in checkPoints)
+                for (int dy = -1; dy <= 1; dy++)
                 {
-                    float dx = Math.Abs(checkPoint.X - cell.X);
-                    float dy = Math.Abs(checkPoint.Y - cell.Y);
-                    float normalizedX = dx / halfWidth;
-                    float normalizedY = dy / halfHeight;
-                    
-                    // Check if point is inside diamond: |x-cx|/hw + |y-cy|/hh <= 1
-                    // Use a small tolerance to prevent edge cases
-                    if (normalizedX + normalizedY <= 1.01f)
+                    var key = (gridX + dx, gridY + dy);
+                    if (_collisionGrid.TryGetValue(key, out var cellsInRegion))
                     {
-                        return true; // Collision detected
+                        // Only check collision cells in this grid region
+                        foreach (var cell in cellsInRegion)
+                        {
+                            // Check if any of the player's key points are inside the collision cell diamond
+                            foreach (var checkPoint in checkPoints)
+                            {
+                                float cellDx = Math.Abs(checkPoint.X - cell.X);
+                                float cellDy = Math.Abs(checkPoint.Y - cell.Y);
+                                float normalizedX = cellDx / halfWidth;
+                                float normalizedY = cellDy / halfHeight;
+                                
+                                // Check if point is inside diamond: |x-cx|/hw + |y-cy|/hh <= 1
+                                // Use a small tolerance to prevent edge cases
+                                if (normalizedX + normalizedY <= 1.01f)
+                                {
+                                    return true; // Collision detected
+                                }
+                            }
+                        }
                     }
                 }
             }
