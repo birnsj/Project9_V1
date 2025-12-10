@@ -163,7 +163,7 @@ namespace Project9
                 else
                 {
                     _isAttacking = false;
-                    ChaseTarget(playerPosition, distanceToPlayer, deltaTime, checkCollision);
+                    ChaseTarget(playerPosition, distanceToPlayer, deltaTime, checkCollision, collisionManager);
                 }
                 
                 if (distanceToPlayer > _attackRange)
@@ -175,16 +175,16 @@ namespace Project9
             else if (_hasDetectedPlayer && !playerInRange)
             {
                 _isAttacking = false;
-                ReturnToOriginal(deltaTime, checkCollision);
+                ReturnToOriginal(deltaTime, checkCollision, collisionManager);
             }
             else
             {
                 _isAttacking = false;
-                PatrolBehavior(deltaTime, checkCollision);
+                PatrolBehavior(deltaTime, checkCollision, collisionManager);
             }
         }
 
-        private void ChaseTarget(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision)
+        private void ChaseTarget(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
         {
             if (distanceToTarget <= _attackRange)
                 return;
@@ -212,15 +212,15 @@ namespace Project9
             
             if (_path != null && _path.Count > 0)
             {
-                FollowPath(target, deltaTime, checkCollision);
+                FollowPath(target, deltaTime, checkCollision, collisionManager);
             }
             else
             {
-                MoveDirectly(target, distanceToTarget, deltaTime, checkCollision);
+                MoveDirectly(target, distanceToTarget, deltaTime, checkCollision, collisionManager);
             }
         }
 
-        private void ReturnToOriginal(float deltaTime, Func<Vector2, bool>? checkCollision)
+        private void ReturnToOriginal(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
         {
             Vector2 directionToOriginal = _originalPosition - _position;
             float distanceToOriginal = directionToOriginal.Length();
@@ -250,11 +250,11 @@ namespace Project9
                 
                 if (_path != null && _path.Count > 0)
                 {
-                    FollowPath(_originalPosition, deltaTime, checkCollision);
+                    FollowPath(_originalPosition, deltaTime, checkCollision, collisionManager);
                 }
                 else
                 {
-                    MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision);
+                    MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager);
                 }
                 
                 directionToOriginal.Normalize();
@@ -268,14 +268,14 @@ namespace Project9
             }
         }
 
-        private void PatrolBehavior(float deltaTime, Func<Vector2, bool>? checkCollision)
+        private void PatrolBehavior(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
         {
             Vector2 directionToOriginal = _originalPosition - _position;
             float distanceToOriginal = directionToOriginal.Length();
             
             if (distanceToOriginal > 5.0f)
             {
-                MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision);
+                MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager);
                 directionToOriginal.Normalize();
                 _rotation = (float)Math.Atan2(directionToOriginal.Y, directionToOriginal.X);
             }
@@ -326,7 +326,7 @@ namespace Project9
             return true;
         }
 
-        private void FollowPath(Vector2 finalTarget, float deltaTime, Func<Vector2, bool>? checkCollision)
+        private void FollowPath(Vector2 finalTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
         {
             while (_path.Count > 0 && Vector2.Distance(_position, _path[0]) < 10.0f)
             {
@@ -346,7 +346,37 @@ namespace Project9
                     if (moveDistance > distance) moveDistance = distance;
                     
                     Vector2 newPosition = _position + direction * moveDistance;
-                    if (checkCollision == null || !checkCollision(newPosition))
+                    
+                    // Use MoveWithCollision if available, otherwise fall back to simple check
+                    if (collisionManager != null)
+                    {
+                        Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, true);
+                        if (Vector2.DistanceSquared(_position, finalPos) > 0.01f)
+                        {
+                            _position = finalPos;
+                            _stuckTimer = 0.0f;
+                        }
+                        else
+                        {
+                            // Stuck - recalculate path
+                            if (checkCollision != null)
+                            {
+                                _path = PathfindingService.FindPath(
+                                    _position, 
+                                    finalTarget, 
+                                    checkCollision,
+                                    GameConfig.PathfindingGridCellWidth,
+                                    GameConfig.PathfindingGridCellHeight
+                                );
+                                if (_path != null && _path.Count > 0)
+                                {
+                                    _path = PathfindingService.SimplifyPath(_path);
+                                }
+                            }
+                            _stuckTimer += deltaTime;
+                        }
+                    }
+                    else if (checkCollision == null || !checkCollision(newPosition))
                     {
                         _position = newPosition;
                         _stuckTimer = 0.0f;
@@ -370,7 +400,7 @@ namespace Project9
             }
         }
 
-        private void MoveDirectly(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision)
+        private void MoveDirectly(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
         {
             Vector2 direction = (target - _position);
             direction.Normalize();
@@ -391,7 +421,39 @@ namespace Project9
             if (moveDistance > 0)
             {
                 Vector2 newPosition = _position + direction * moveDistance;
-                if (checkCollision == null || !checkCollision(newPosition))
+                
+                // Use MoveWithCollision if available for smooth sliding
+                if (collisionManager != null)
+                {
+                    Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, true);
+                    if (Vector2.DistanceSquared(_position, finalPos) > 0.01f)
+                    {
+                        _position = finalPos;
+                        _stuckTimer = 0.0f;
+                    }
+                    else
+                    {
+                        _stuckTimer += deltaTime;
+                        
+                        if (_stuckTimer > STUCK_THRESHOLD && checkCollision != null)
+                        {
+                            Console.WriteLine("[Enemy] Stuck for too long, recalculating path");
+                            _path = PathfindingService.FindPath(
+                                _position, 
+                                target, 
+                                checkCollision,
+                                GameConfig.PathfindingGridCellWidth,
+                                GameConfig.PathfindingGridCellHeight
+                            );
+                            if (_path != null && _path.Count > 0)
+                            {
+                                _path = PathfindingService.SimplifyPath(_path);
+                            }
+                            _stuckTimer = 0.0f;
+                        }
+                    }
+                }
+                else if (checkCollision == null || !checkCollision(newPosition))
                 {
                     _position = newPosition;
                     _stuckTimer = 0.0f;
