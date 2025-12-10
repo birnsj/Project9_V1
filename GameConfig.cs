@@ -59,6 +59,12 @@ namespace Project9
         
         /// <summary>Collision cell half-height (pixels)</summary>
         public const float CollisionCellHalfHeight = 16.0f;
+        
+        /// <summary>Entity collision radius (pixels)</summary>
+        public const float EntityCollisionRadius = 22.0f;
+        
+        /// <summary>Collision buffer to keep entities away from walls (pixels)</summary>
+        public const float CollisionBuffer = 6.0f;
     }
 }
 

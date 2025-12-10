@@ -64,11 +64,19 @@ namespace Project9.Editor
         public async Task<bool> EnsureServerRunningAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
         {
             // First check if server is already running
-            progress?.Report("Checking if ComfyUI server is running...");
-            if (await IsServerRunningAsync(cancellationToken))
+            progress?.Report("Checking server status...");
+            
+            try
             {
-                progress?.Report("ComfyUI server is already running.");
-                return true;
+                if (await IsServerRunningAsync(cancellationToken))
+                {
+                    progress?.Report("Already running ✓");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"Connection check failed: {ex.Message}");
             }
 
             // If auto-start is not configured, return false
@@ -127,47 +135,64 @@ namespace Project9.Editor
                 const int maxWaitSeconds = 60;
                 const int pollIntervalMs = 1000;
                 int waitedSeconds = 0;
+                int consecutiveFailures = 0;
+                const int maxConsecutiveFailures = 5;
 
                 while (waitedSeconds < maxWaitSeconds && !cancellationToken.IsCancellationRequested)
                 {
                     await Task.Delay(pollIntervalMs, cancellationToken);
                     waitedSeconds++;
 
-                    if (await IsServerRunningAsync(cancellationToken))
-                    {
-                        progress?.Report("ComfyUI server is ready!");
-                        
-                        // Open browser to ComfyUI interface after a short delay to ensure server is fully ready
-                        await Task.Delay(500, cancellationToken);
-                        try
-                        {
-                            Process.Start(new ProcessStartInfo
-                            {
-                                FileName = _serverUrl,
-                                UseShellExecute = true
-                            });
-                            progress?.Report("Opening ComfyUI in browser...");
-                        }
-                        catch (Exception ex)
-                        {
-                            // If opening browser fails, log it but don't fail the startup
-                            progress?.Report($"Note: Could not automatically open browser. Please open {_serverUrl} manually.");
-                        }
-                        
-                        return true;
-                    }
-
-                    // Check if process has exited
+                    // Check if process has exited early
                     if (_comfyUIProcess.HasExited)
                     {
-                        progress?.Report($"ComfyUI process exited unexpectedly. Exit code: {_comfyUIProcess.ExitCode}");
+                        progress?.Report($"Process exited (code: {_comfyUIProcess.ExitCode})");
                         return false;
                     }
 
-                    progress?.Report($"Waiting for server... ({waitedSeconds}/{maxWaitSeconds} seconds)");
+                    try
+                    {
+                        if (await IsServerRunningAsync(cancellationToken))
+                        {
+                            progress?.Report("Server ready! ✓");
+                            
+                            // Open browser to ComfyUI interface after a short delay
+                            await Task.Delay(500, cancellationToken);
+                            try
+                            {
+                                Process.Start(new ProcessStartInfo
+                                {
+                                    FileName = _serverUrl,
+                                    UseShellExecute = true
+                                });
+                                progress?.Report("Opening browser...");
+                            }
+                            catch
+                            {
+                                // Browser launch is optional, don't fail startup
+                                progress?.Report($"Server ready at {_serverUrl}");
+                            }
+                            
+                            return true;
+                        }
+                        
+                        consecutiveFailures = 0; // Reset on successful connection attempt
+                    }
+                    catch
+                    {
+                        consecutiveFailures++;
+                        if (consecutiveFailures >= maxConsecutiveFailures)
+                        {
+                            progress?.Report($"Connection test failing ({consecutiveFailures} failures)");
+                        }
+                    }
+
+                    // Progress indicator
+                    string dots = new string('.', (waitedSeconds % 3) + 1);
+                    progress?.Report($"Starting{dots} ({waitedSeconds}s)");
                 }
 
-                progress?.Report("ComfyUI server did not become ready within the timeout period.");
+                progress?.Report("Timeout waiting for server");
                 return false;
             }
             catch (Exception ex)

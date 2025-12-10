@@ -1,0 +1,255 @@
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Project9
+{
+    /// <summary>
+    /// Tracks and displays performance diagnostics
+    /// </summary>
+    public class DiagnosticsOverlay
+    {
+        private SpriteFont? _font;
+        private bool _isVisible = false;
+        
+        // FPS tracking
+        private Queue<float> _frameTimeHistory = new Queue<float>(60);
+        private float _currentFps = 0.0f;
+        private float _minFps = float.MaxValue;
+        private float _maxFps = 0.0f;
+        
+        // Performance metrics
+        private int _drawCallCount = 0;
+        private float _entityUpdateTimeMs = 0.0f;
+        private float _pathfindingTimeMs = 0.0f;
+        private int _activePathfindingCount = 0;
+        
+        // Update timing
+        private float _totalUpdateTimeMs = 0.0f;
+        private float _inputUpdateTimeMs = 0.0f;
+        private float _collisionUpdateTimeMs = 0.0f;
+        
+        // Memory tracking
+        private long _memoryUsageMB = 0;
+        private int _gcGen0 = 0;
+        private int _gcGen1 = 0;
+        private int _gcGen2 = 0;
+        
+        // Entity counts
+        private int _totalEntities = 0;
+        private int _movingEntities = 0;
+        
+        // Collision cache stats
+        private int _cacheHits = 0;
+        private int _cacheMisses = 0;
+        private int _cacheSize = 0;
+        private int _cacheHitRate = 0;
+        
+        public bool IsVisible => _isVisible;
+        
+        public void Initialize(SpriteFont font)
+        {
+            _font = font;
+        }
+        
+        public void Toggle()
+        {
+            _isVisible = !_isVisible;
+            Console.WriteLine($"[Diagnostics] Overlay {(_isVisible ? "enabled" : "disabled")}");
+        }
+        
+        public void Show() => _isVisible = true;
+        public void Hide() => _isVisible = false;
+        
+        /// <summary>
+        /// Update FPS counter
+        /// </summary>
+        public void UpdateFPS(float deltaTime)
+        {
+            if (deltaTime > 0)
+            {
+                _frameTimeHistory.Enqueue(deltaTime);
+                if (_frameTimeHistory.Count > 60)
+                    _frameTimeHistory.Dequeue();
+                
+                float avgFrameTime = _frameTimeHistory.Average();
+                _currentFps = 1.0f / avgFrameTime;
+                _minFps = Math.Min(_minFps, _currentFps);
+                _maxFps = Math.Max(_maxFps, _currentFps);
+            }
+        }
+        
+        /// <summary>
+        /// Update performance metrics
+        /// </summary>
+        public void UpdateMetrics(
+            int drawCallCount,
+            float entityUpdateTimeMs,
+            float pathfindingTimeMs,
+            int activePathfindingCount,
+            float totalUpdateTimeMs,
+            float inputUpdateTimeMs,
+            float collisionUpdateTimeMs,
+            int totalEntities,
+            int movingEntities,
+            int cacheHits = 0,
+            int cacheMisses = 0,
+            int cacheSize = 0,
+            int cacheHitRate = 0)
+        {
+            _drawCallCount = drawCallCount;
+            _entityUpdateTimeMs = entityUpdateTimeMs;
+            _pathfindingTimeMs = pathfindingTimeMs;
+            _activePathfindingCount = activePathfindingCount;
+            _totalUpdateTimeMs = totalUpdateTimeMs;
+            _inputUpdateTimeMs = inputUpdateTimeMs;
+            _collisionUpdateTimeMs = collisionUpdateTimeMs;
+            _totalEntities = totalEntities;
+            _movingEntities = movingEntities;
+            _cacheHits = cacheHits;
+            _cacheMisses = cacheMisses;
+            _cacheSize = cacheSize;
+            _cacheHitRate = cacheHitRate;
+            
+            // Update memory stats
+            _memoryUsageMB = GC.GetTotalMemory(false) / (1024 * 1024);
+            _gcGen0 = GC.CollectionCount(0);
+            _gcGen1 = GC.CollectionCount(1);
+            _gcGen2 = GC.CollectionCount(2);
+        }
+        
+        /// <summary>
+        /// Reset min/max FPS
+        /// </summary>
+        public void ResetFPSStats()
+        {
+            _minFps = _currentFps;
+            _maxFps = _currentFps;
+        }
+        
+        /// <summary>
+        /// Draw diagnostics overlay
+        /// </summary>
+        public void Draw(SpriteBatch spriteBatch, GraphicsDevice graphicsDevice)
+        {
+            if (!_isVisible || _font == null)
+                return;
+            
+            int screenWidth = graphicsDevice.Viewport.Width;
+            int screenHeight = graphicsDevice.Viewport.Height;
+            
+            // Background panel
+            Vector2 panelPos = new Vector2(10, 10);
+            Vector2 panelSize = new Vector2(350, 400);
+            
+            // Draw semi-transparent background
+            DrawPanel(spriteBatch, graphicsDevice, panelPos, panelSize, new Color(0, 0, 0, 180));
+            
+            // Draw text
+            Vector2 textPos = panelPos + new Vector2(10, 10);
+            float lineHeight = _font.LineSpacing + 2;
+            int lineIndex = 0;
+            
+            // Header
+            DrawText(spriteBatch, "=== DIAGNOSTICS (F3) ===", textPos, lineIndex++, Color.Yellow);
+            lineIndex++; // Blank line
+            
+            // FPS Section
+            DrawText(spriteBatch, "--- PERFORMANCE ---", textPos, lineIndex++, Color.Cyan);
+            DrawText(spriteBatch, $"FPS: {_currentFps:F1} ({_minFps:F0}-{_maxFps:F0})", textPos, lineIndex++, GetFPSColor(_currentFps));
+            DrawText(spriteBatch, $"Frame Time: {(_frameTimeHistory.Any() ? _frameTimeHistory.Average() * 1000 : 0):F2}ms", textPos, lineIndex++, Color.White);
+            DrawText(spriteBatch, $"Draw Calls: {_drawCallCount}", textPos, lineIndex++, Color.White);
+            lineIndex++; // Blank line
+            
+            // Update Timing Section
+            DrawText(spriteBatch, "--- UPDATE TIMING ---", textPos, lineIndex++, Color.Cyan);
+            DrawText(spriteBatch, $"Total Update: {_totalUpdateTimeMs:F2}ms", textPos, lineIndex++, GetTimingColor(_totalUpdateTimeMs));
+            DrawText(spriteBatch, $"  Input: {_inputUpdateTimeMs:F2}ms", textPos, lineIndex++, Color.LightGray);
+            DrawText(spriteBatch, $"  Entities: {_entityUpdateTimeMs:F2}ms", textPos, lineIndex++, GetTimingColor(_entityUpdateTimeMs));
+            DrawText(spriteBatch, $"  Collision: {_collisionUpdateTimeMs:F2}ms", textPos, lineIndex++, Color.LightGray);
+            lineIndex++; // Blank line
+            
+            // Pathfinding Section
+            DrawText(spriteBatch, "--- PATHFINDING ---", textPos, lineIndex++, Color.Cyan);
+            DrawText(spriteBatch, $"Execution Time: {_pathfindingTimeMs:F2}ms", textPos, lineIndex++, GetTimingColor(_pathfindingTimeMs));
+            DrawText(spriteBatch, $"Active Searches: {_activePathfindingCount}", textPos, lineIndex++, Color.White);
+            lineIndex++; // Blank line
+            
+            // Collision Cache Section
+            DrawText(spriteBatch, "--- COLLISION CACHE ---", textPos, lineIndex++, Color.Cyan);
+            DrawText(spriteBatch, $"Hit Rate: {_cacheHitRate}%", textPos, lineIndex++, GetCacheHitRateColor(_cacheHitRate));
+            DrawText(spriteBatch, $"Hits/Misses: {_cacheHits}/{_cacheMisses}", textPos, lineIndex++, Color.White);
+            DrawText(spriteBatch, $"Cache Size: {_cacheSize} cells", textPos, lineIndex++, Color.White);
+            lineIndex++; // Blank line
+            
+            // Entity Section
+            DrawText(spriteBatch, "--- ENTITIES ---", textPos, lineIndex++, Color.Cyan);
+            DrawText(spriteBatch, $"Total: {_totalEntities}", textPos, lineIndex++, Color.White);
+            DrawText(spriteBatch, $"Moving: {_movingEntities}", textPos, lineIndex++, Color.White);
+            lineIndex++; // Blank line
+            
+            // Memory Section
+            DrawText(spriteBatch, "--- MEMORY ---", textPos, lineIndex++, Color.Cyan);
+            DrawText(spriteBatch, $"Usage: {_memoryUsageMB} MB", textPos, lineIndex++, GetMemoryColor(_memoryUsageMB));
+            DrawText(spriteBatch, $"GC: Gen0={_gcGen0} Gen1={_gcGen1} Gen2={_gcGen2}", textPos, lineIndex++, Color.White);
+            lineIndex++; // Blank line
+            
+            // Instructions
+            DrawText(spriteBatch, "Press F3 to toggle", textPos, lineIndex++, Color.Gray);
+            DrawText(spriteBatch, "Press R to reset FPS stats", textPos, lineIndex++, Color.Gray);
+        }
+        
+        private void DrawText(SpriteBatch spriteBatch, string text, Vector2 basePos, int lineIndex, Color color)
+        {
+            if (_font == null) return;
+            
+            float lineHeight = _font.LineSpacing + 2;
+            Vector2 position = basePos + new Vector2(0, lineIndex * lineHeight);
+            
+            // Draw shadow for better readability
+            spriteBatch.DrawString(_font, text, position + new Vector2(1, 1), Color.Black);
+            spriteBatch.DrawString(_font, text, position, color);
+        }
+        
+        private void DrawPanel(SpriteBatch spriteBatch, GraphicsDevice graphicsDevice, Vector2 position, Vector2 size, Color color)
+        {
+            // Create a 1x1 white texture if we don't have one
+            Texture2D? whiteTexture = new Texture2D(graphicsDevice, 1, 1);
+            whiteTexture.SetData(new[] { Color.White });
+            
+            spriteBatch.Draw(whiteTexture, new Rectangle((int)position.X, (int)position.Y, (int)size.X, (int)size.Y), color);
+        }
+        
+        private Color GetFPSColor(float fps)
+        {
+            if (fps >= 55) return Color.LimeGreen;
+            if (fps >= 30) return Color.Yellow;
+            return Color.Red;
+        }
+        
+        private Color GetTimingColor(float timeMs)
+        {
+            if (timeMs < 5) return Color.LimeGreen;
+            if (timeMs < 10) return Color.Yellow;
+            return Color.Orange;
+        }
+        
+        private Color GetMemoryColor(long memoryMB)
+        {
+            if (memoryMB < 256) return Color.LimeGreen;
+            if (memoryMB < 512) return Color.Yellow;
+            return Color.Orange;
+        }
+        
+        private Color GetCacheHitRateColor(int hitRate)
+        {
+            if (hitRate >= 80) return Color.LimeGreen;
+            if (hitRate >= 50) return Color.Yellow;
+            if (hitRate >= 20) return Color.Orange;
+            return Color.Red;
+        }
+    }
+}
+

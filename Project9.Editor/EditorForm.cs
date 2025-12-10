@@ -17,6 +17,7 @@ namespace Project9.Editor
         private StatusStrip _statusStrip = null!;
         private ToolStripStatusLabel _positionLabel = null!;
         private ToolStripStatusLabel _zoomLabel = null!;
+        private ToolStripStatusLabel _comfyUIStatusLabel = null!;
         private MenuStrip _menuStrip = null!;
         private EditorMapData _mapData = null!;
         private TileTextureLoader _textureLoader = null!;
@@ -203,8 +204,12 @@ namespace Project9.Editor
             _statusStrip = new StatusStrip();
             _positionLabel = new ToolStripStatusLabel("Position: (0, 0)");
             _zoomLabel = new ToolStripStatusLabel("Zoom: 1.0x");
+            _comfyUIStatusLabel = new ToolStripStatusLabel("ComfyUI: Not started");
+            _comfyUIStatusLabel.Spring = true; // Take up remaining space
+            _comfyUIStatusLabel.TextAlign = ContentAlignment.MiddleRight;
             _statusStrip.Items.Add(_positionLabel);
             _statusStrip.Items.Add(_zoomLabel);
+            _statusStrip.Items.Add(_comfyUIStatusLabel);
 
             // Layout
             this.Controls.Add(_mapRenderControl);
@@ -261,9 +266,13 @@ namespace Project9.Editor
                 if (string.IsNullOrEmpty(_comfyUISettings.ComfyUIPythonPath) || 
                     string.IsNullOrEmpty(_comfyUISettings.ComfyUIInstallPath))
                 {
-                    // Paths not configured, skip auto-start
+                    Console.WriteLine("[Editor] ComfyUI paths not configured - skipping auto-start");
+                    UpdateStatusSafe("ComfyUI: Not configured (auto-start skipped)");
                     return;
                 }
+
+                UpdateStatusSafe("ComfyUI: Starting...");
+                Console.WriteLine("[Editor] Auto-starting ComfyUI server...");
 
                 // Create server manager
                 _autoStartedServerManager = new ComfyUIServerManager(
@@ -272,15 +281,83 @@ namespace Project9.Editor
                     _comfyUISettings.ComfyUIInstallPath
                 );
 
-                // Try to start server (silently, no progress reporting for auto-start)
-                var progress = new Progress<string>(status => { /* Silent auto-start */ });
-                await _autoStartedServerManager.EnsureServerRunningAsync(progress);
+                // Report progress to status label
+                var progress = new Progress<string>(status => 
+                {
+                    Console.WriteLine($"[Editor] {status}");
+                    UpdateStatusSafe($"ComfyUI: {status}");
+                });
+                
+                bool success = await _autoStartedServerManager.EnsureServerRunningAsync(progress);
+                
+                if (success)
+                {
+                    UpdateStatusSafe("ComfyUI: Running ✓");
+                    Console.WriteLine("[Editor] ComfyUI server started successfully");
+                }
+                else
+                {
+                    UpdateStatusSafe("ComfyUI: Failed to start");
+                    Console.WriteLine("[Editor] ComfyUI server failed to start");
+                    
+                    // Show error dialog to user
+                    MessageBox.Show(
+                        "ComfyUI server failed to start automatically. Please check:\n\n" +
+                        "1. Python path is correct\n" +
+                        "2. ComfyUI installation path is correct\n" +
+                        "3. main.py exists in ComfyUI directory\n\n" +
+                        "You can configure these in ComfyUI Settings.",
+                        "ComfyUI Auto-Start Failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning
+                    );
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // If auto-start fails, silently continue - user can start manually
+                // Report error instead of silently swallowing
+                string errorMsg = $"ComfyUI: Error - {ex.Message}";
+                UpdateStatusSafe(errorMsg);
+                Console.WriteLine($"[Editor] ComfyUI auto-start error: {ex.Message}");
+                Console.WriteLine($"[Editor] Stack trace: {ex.StackTrace}");
+                
+                // Show error dialog
+                MessageBox.Show(
+                    $"Error auto-starting ComfyUI:\n\n{ex.Message}\n\n" +
+                    "You can start ComfyUI manually or disable auto-start in settings.",
+                    "ComfyUI Auto-Start Error",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+                
                 _autoStartedServerManager?.Dispose();
                 _autoStartedServerManager = null;
+            }
+        }
+        
+        /// <summary>
+        /// Thread-safe status update
+        /// </summary>
+        private void UpdateStatusSafe(string message)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => UpdateStatus(message)));
+            }
+            else
+            {
+                UpdateStatus(message);
+            }
+        }
+        
+        /// <summary>
+        /// Update status label
+        /// </summary>
+        private void UpdateStatus(string message)
+        {
+            if (_comfyUIStatusLabel != null)
+            {
+                _comfyUIStatusLabel.Text = message;
             }
         }
 
