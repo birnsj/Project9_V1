@@ -98,11 +98,9 @@ namespace Project9
         /// </summary>
         public virtual void ClearTarget()
         {
+            // FIX Bug #4: Removed dead and duplicate code
             _targetPosition = null;
-            _path = null; // Clear path completely
-            _waypoint = null;
-            _stuckTimer = 0.0f;
-            _path?.Clear();
+            _path = null;
             _waypoint = null;
             _currentSpeed = 0f;
             _stuckTimer = 0f;

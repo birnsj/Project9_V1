@@ -57,11 +57,17 @@ namespace Project9
             LogOverlay.Log($"[Player] NEW TARGET SET - Old target: {oldTargetInfo}, Path: {pathInfo}, State: {movingState}", LogLevel.Info);
             LogOverlay.Log($"[Player] Current pos: ({_position.X:F1}, {_position.Y:F1}) -> New target: ({target.X:F1}, {target.Y:F1})", LogLevel.Info);
             
+            // FIX: Always set target first, before any pathfinding calculations
+            // This ensures the target is set even if pathfinding fails or takes time
+            // CRITICAL: Set target immediately to ensure clicks always register
+            // Even if called while player is moving, this will take effect on the next Update call
             _targetPosition = target;
             _waypoint = null;
             _path = null; // Use null instead of Clear() to ensure it's truly cleared
             _stuckTimer = 0.0f;
-            _currentSpeed = 0.0f; // Reset speed to ensure fresh start
+            // FIX Bug #2: Don't reset speed to 0 - preserve momentum for smoother transitions
+            // The Update method will recalculate speed based on current movement state
+            // _currentSpeed = 0.0f; // REMOVED - caused 1-frame stutter when re-clicking while moving
             
             // Check if target location itself is blocked by TERRAIN collision
             bool targetBlockedByTerrain = checkTerrainOnly != null && checkTerrainOnly(target);
@@ -82,12 +88,13 @@ namespace Project9
                 Vector2 direction = target - _position;
                 float distance = direction.Length();
                 
-                // CRITICAL: Check if player's CURRENT position is in collision while moving
-                // This can happen if player is mid-movement through collision buffer zone
+                // FIX Bug #3: Check if player's position is in collision, but don't force pathfinding
+                // Just log a warning - let the direct path check happen first
+                // This prevents unnecessary pathfinding when player is near obstacles
                 bool playerPosInCollision = checkCollision(_position);
                 if (playerPosInCollision)
                 {
-                    LogOverlay.Log($"[Player] WARNING: Player position ({_position.X:F1}, {_position.Y:F1}) is IN COLLISION while moving! This affects path checks.", LogLevel.Error);
+                    LogOverlay.Log($"[Player] NOTE: Player position ({_position.X:F1}, {_position.Y:F1}) is in collision zone - will check direct path anyway", LogLevel.Warning);
                 }
                 
                 // Skip direct path check if target itself is blocked by terrain
@@ -101,13 +108,9 @@ namespace Project9
                     int samples = Math.Max(2, (int)(distance / 16.0f) + 1); // Denser sampling
                     LogOverlay.Log($"[Player] Checking direct path with {samples} samples over {distance:F1} pixels (player in collision: {playerPosInCollision})", LogLevel.Info);
                     
-                    // If player is currently in collision, force pathfinding
-                    if (playerPosInCollision)
-                    {
-                        LogOverlay.Log($"[Player] FORCING PATHFINDING - player position in collision", LogLevel.Warning);
-                        pathClear = false;
-                    }
-                    else
+                    // FIX Bug #3: Don't force pathfinding just because player is in collision zone
+                    // Instead, let the direct path sampling detect if there's actually a blocked path
+                    // The player might just be passing through a collision buffer during normal movement
                     {
                         // Check all points including start and end (but skip exact start/end positions)
                         for (int i = 0; i <= samples; i++)
@@ -374,6 +377,16 @@ namespace Project9
                                 if (directPathClear)
                                 {
                                     _path.Clear();
+                                    // FIX Bug #1: Update moveTarget immediately since path is now cleared
+                                    // This prevents moving toward stale waypoint for one frame
+                                    moveTarget = _targetPosition.Value;
+                                    direction = _targetPosition.Value - _position;
+                                    distance = direction.Length();
+                                    if (distance > 0.1f)
+                                    {
+                                        direction.Normalize();
+                                    }
+                                    nextPosition = _position + direction * moveDistance;
                                 }
                             }
                         }

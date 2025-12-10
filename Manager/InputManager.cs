@@ -121,9 +121,22 @@ namespace Project9
             bool isOverUI = mouseScreenPos.X >= 10 && mouseScreenPos.X <= 260 && 
                            mouseScreenPos.Y >= 10 && mouseScreenPos.Y <= 130;
 
-            // Left mouse button clicked
-            if (currentMouseState.LeftButton == ButtonState.Pressed && 
-                _previousMouseState.LeftButton == ButtonState.Released)
+            // FIX: Detect clicks properly even when clicking rapidly
+            // The issue was that if you click while the button was still "pressed" from a previous frame,
+            // the state transition check would fail. We need to detect new clicks even if the button
+            // was already pressed, as long as it wasn't being held/dragged.
+            bool isNewClick = currentMouseState.LeftButton == ButtonState.Pressed && 
+                             _previousMouseState.LeftButton == ButtonState.Released;
+            
+            // Also detect clicks when button is pressed but mouse moved significantly (new click location)
+            // This handles rapid clicking while player is moving - each click to a new location should register
+            bool isRapidClick = currentMouseState.LeftButton == ButtonState.Pressed && 
+                               _previousMouseState.LeftButton == ButtonState.Pressed &&
+                               !_isDragging &&
+                               Vector2.Distance(mouseWorldPos, _clickStartPos) > DRAG_THRESHOLD * 0.5f; // Mouse moved = new click intent
+            
+            // Left mouse button clicked (new click or rapid click)
+            if (isNewClick || isRapidClick)
             {
                 // Ignore clicks on UI elements
                 if (isOverUI)
@@ -132,7 +145,7 @@ namespace Project9
                 }
                 else
                 {
-                    Console.WriteLine($"[InputManager] Mouse clicked at ({mouseWorldPos.X:F0}, {mouseWorldPos.Y:F0})");
+                    Console.WriteLine($"[InputManager] Mouse clicked at ({mouseWorldPos.X:F0}, {mouseWorldPos.Y:F0}) (new={isNewClick}, rapid={isRapidClick})");
                     
                     // Reset drag state on new click
                     _isDragging = false;
