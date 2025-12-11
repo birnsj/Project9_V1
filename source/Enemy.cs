@@ -21,6 +21,8 @@ namespace Project9
         
         // Sight cone and rotation
         private float _rotation;
+        
+        public float Rotation => _rotation;
         private float _sightConeAngle;
         private float _sightConeLength;
         private float _rotationSpeed;

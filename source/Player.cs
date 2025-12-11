@@ -12,6 +12,7 @@ namespace Project9
         private float _sneakSpeed;
         private Color _sneakColor;
         private bool _isSneaking;
+        private float _rotation; // Facing direction in radians
 
         public bool IsSneaking => _isSneaking;
 
@@ -33,7 +34,10 @@ namespace Project9
             _sneakSpeed = _walkSpeed * GameConfig.PlayerSneakSpeedMultiplier;
             _sneakColor = Color.Purple;
             _isSneaking = false;
+            _rotation = 0.0f; // Initialize facing direction
         }
+        
+        public float Rotation => _rotation;
 
         public void ToggleSneak()
         {
@@ -308,6 +312,8 @@ namespace Project9
                 else if (distance > stopThreshold)
                 {
                     direction.Normalize();
+                    // Update rotation based on movement direction
+                    _rotation = (float)Math.Atan2(direction.Y, direction.X);
                     float moveDistance = _currentSpeed * deltaTime;
                     
                     if (moveDistance > distance)

@@ -269,6 +269,75 @@ namespace Project9
                 spriteBatch.Draw(_diamondTexture, drawPosition, _color);
             }
         }
+        
+        private static Texture2D? _directionLineTexture;
+        
+        /// <summary>
+        /// Draw direction indicator (arrow) showing which way the entity is facing
+        /// </summary>
+        public virtual void DrawDirectionIndicator(SpriteBatch spriteBatch, float rotation, float length = 30.0f)
+        {
+            // Create a simple line texture if needed (shared static texture)
+            if (_directionLineTexture == null)
+            {
+                _directionLineTexture = new Texture2D(spriteBatch.GraphicsDevice, 1, 1);
+                _directionLineTexture.SetData(new[] { Color.White });
+            }
+            
+            // Calculate arrow endpoint
+            Vector2 direction = new Vector2((float)Math.Cos(rotation), (float)Math.Sin(rotation));
+            Vector2 arrowEnd = _position + direction * length;
+            
+            // Draw main arrow line
+            Vector2 edge = arrowEnd - _position;
+            float angle = (float)Math.Atan2(edge.Y, edge.X);
+            float lineLength = edge.Length();
+            
+            Color arrowColor = new Color(_color.R, _color.G, _color.B, (byte)200); // Slightly transparent
+            
+            spriteBatch.Draw(
+                _directionLineTexture,
+                _position,
+                null,
+                arrowColor,
+                angle,
+                Vector2.Zero,
+                new Vector2(lineLength, 3.0f), // 3 pixel thick line
+                SpriteEffects.None,
+                0.0f
+            );
+            
+            // Draw arrowhead (small triangle at the end)
+            float arrowheadSize = 8.0f;
+            
+            Vector2 perp = new Vector2(-direction.Y, direction.X);
+            
+            Vector2 arrowhead1 = arrowEnd + perp * arrowheadSize * 0.5f;
+            Vector2 arrowhead2 = arrowEnd - perp * arrowheadSize * 0.5f;
+            
+            // Draw arrowhead lines
+            DrawDirectionLine(spriteBatch, arrowEnd, arrowhead1, arrowColor, _directionLineTexture);
+            DrawDirectionLine(spriteBatch, arrowEnd, arrowhead2, arrowColor, _directionLineTexture);
+        }
+        
+        private void DrawDirectionLine(SpriteBatch spriteBatch, Vector2 start, Vector2 end, Color color, Texture2D texture)
+        {
+            Vector2 edge = end - start;
+            float angle = (float)Math.Atan2(edge.Y, edge.X);
+            float length = edge.Length();
+            
+            spriteBatch.Draw(
+                texture,
+                start,
+                null,
+                color,
+                angle,
+                Vector2.Zero,
+                new Vector2(length, 2.0f),
+                SpriteEffects.None,
+                0.0f
+            );
+        }
 
         /// <summary>
         /// Update entity - must be implemented by derived classes

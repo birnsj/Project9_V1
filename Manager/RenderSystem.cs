@@ -140,7 +140,9 @@ namespace Project9
                 }
                 
                 enemy.Draw(_spriteBatch);
-                _lastDrawCallCount += _showCollisionSpheres ? 4 : 3; // Aggro, sight cone, collision sphere (optional), sprite
+                // Draw direction indicator
+                enemy.DrawDirectionIndicator(_spriteBatch, enemy.Rotation);
+                _lastDrawCallCount += _showCollisionSpheres ? 5 : 4; // Aggro, sight cone, collision sphere (optional), sprite, direction
             }
 
             // Draw player
@@ -149,7 +151,9 @@ namespace Project9
                 entityManager.Player.DrawCollisionSphere(_spriteBatch);
             }
             entityManager.Player.Draw(_spriteBatch);
-            _lastDrawCallCount += _showCollisionSpheres ? 2 : 1;
+            // Draw direction indicator
+            entityManager.Player.DrawDirectionIndicator(_spriteBatch, entityManager.Player.Rotation);
+            _lastDrawCallCount += _showCollisionSpheres ? 3 : 2; // Collision sphere (optional), sprite, direction
             
             // Draw debug path for player (only if not dragging/following cursor and path debug is enabled)
             if (_showPath && !entityManager.IsFollowingCursor)
