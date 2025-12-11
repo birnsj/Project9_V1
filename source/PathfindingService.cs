@@ -5,11 +5,14 @@ using Microsoft.Xna.Framework;
 namespace Project9
 {
     /// <summary>
-    /// Shared pathfinding service using A* algorithm with object pooling for performance
+    /// Shared pathfinding service using A* algorithm with object pooling for performance.
+    /// Thread-safe: All methods that use shared static data structures are protected by locks.
+    /// Note: Current usage is single-threaded, but the design supports multi-threading.
     /// </summary>
     public class PathfindingService
     {
         // Shared data structures to avoid allocations
+        // These are protected by _lock to ensure thread safety
         private static readonly PriorityQueue<(int x, int y), float> _sharedOpenSet = new();
         private static readonly Dictionary<(int x, int y), float> _sharedGScore = new();
         private static readonly Dictionary<(int x, int y), float> _sharedFScore = new();
@@ -17,6 +20,7 @@ namespace Project9
         private static readonly Dictionary<(int x, int y), (int x, int y)> _sharedCameFrom = new();
         
         // Thread safety lock for shared resources
+        // Protects all access to _sharedOpenSet, _sharedGScore, _sharedFScore, _sharedClosedSet, _sharedCameFrom
         private static readonly object _lock = new object();
         
         /// <summary>
@@ -232,7 +236,7 @@ namespace Project9
         /// <summary>
         /// Smooth path by removing unnecessary waypoints
         /// </summary>
-        public static List<Vector2> SmoothPath(List<Vector2> path, Func<Vector2, Vector2, bool>? checkLineOfSight = null)
+        public static List<Vector2>? SmoothPath(List<Vector2>? path, Func<Vector2, Vector2, bool>? checkLineOfSight = null)
         {
             if (path == null || path.Count <= 2)
                 return path;
@@ -279,7 +283,7 @@ namespace Project9
         /// <summary>
         /// Simplify path by removing collinear points
         /// </summary>
-        public static List<Vector2> SimplifyPath(List<Vector2> path, float threshold = 0.1f)
+        public static List<Vector2>? SimplifyPath(List<Vector2>? path, float threshold = 0.1f)
         {
             if (path == null || path.Count <= 2)
                 return path;

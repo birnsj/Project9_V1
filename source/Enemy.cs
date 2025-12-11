@@ -328,6 +328,9 @@ namespace Project9
 
         private void FollowPath(Vector2 finalTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
         {
+            if (_path == null)
+                return;
+            
             while (_path.Count > 0 && Vector2.Distance(_position, _path[0]) < 10.0f)
             {
                 _path.RemoveAt(0);
@@ -350,7 +353,7 @@ namespace Project9
                     // Use MoveWithCollision if available, otherwise fall back to simple check
                     if (collisionManager != null)
                     {
-                        Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, true);
+                        Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, true, 3, _position);
                         if (Vector2.DistanceSquared(_position, finalPos) > 0.01f)
                         {
                             _position = finalPos;
@@ -425,7 +428,7 @@ namespace Project9
                 // Use MoveWithCollision if available for smooth sliding
                 if (collisionManager != null)
                 {
-                    Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, true);
+                    Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, true, 3, _position);
                     if (Vector2.DistanceSquared(_position, finalPos) > 0.01f)
                     {
                         _position = finalPos;

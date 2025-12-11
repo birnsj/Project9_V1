@@ -94,15 +94,16 @@ namespace Project9
             Player player = new Player(playerPosition);
 
             // Initialize managers
-            _collisionManager = new CollisionManager(new System.Collections.Generic.List<Enemy>());
-            _collisionManager.LoadCollisionCells();
-            
-            _entityManager = new EntityManager(player, _collisionManager);
+            // Create EntityManager first (without CollisionManager)
+            _entityManager = new EntityManager(player);
             _entityManager.LoadEnemies(_map.MapData);
             
-            // Update collision manager with loaded enemies
+            // Create CollisionManager once with loaded enemies
             _collisionManager = new CollisionManager(_entityManager.Enemies);
             _collisionManager.LoadCollisionCells();
+            
+            // Set CollisionManager in EntityManager
+            _entityManager.SetCollisionManager(_collisionManager);
             
             _inputManager = new InputManager(_camera, ScreenToWorld);
             _renderSystem = new RenderSystem(GraphicsDevice, _spriteBatch, _map, _camera, _uiFont);

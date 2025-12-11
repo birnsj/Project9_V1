@@ -10,7 +10,6 @@ namespace Project9
     {
         // Player-specific fields
         private float _sneakSpeed;
-        private float _distanceThreshold;
         private Color _sneakColor;
         private bool _isSneaking;
 
@@ -32,7 +31,6 @@ namespace Project9
             : base(startPosition, Color.Red, GameConfig.PlayerWalkSpeed, GameConfig.PlayerRunSpeed)
         {
             _sneakSpeed = _walkSpeed * GameConfig.PlayerSneakSpeedMultiplier;
-            _distanceThreshold = 100.0f;
             _sneakColor = Color.Purple;
             _isSneaking = false;
         }
@@ -167,7 +165,10 @@ namespace Project9
                     {
                         // Smooth the path to remove unnecessary waypoints
                         _path = PathfindingService.SimplifyPath(_path);
-                        LogOverlay.Log($"[Player] Pathfinding SUCCEEDED - {_path.Count} waypoints", LogLevel.Info);
+                        if (_path != null)
+                        {
+                            LogOverlay.Log($"[Player] Pathfinding SUCCEEDED - {_path.Count} waypoints", LogLevel.Info);
+                        }
                     }
                 }
                 else

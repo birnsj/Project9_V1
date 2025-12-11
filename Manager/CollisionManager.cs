@@ -29,6 +29,14 @@ namespace Project9
             _enemies = enemies;
         }
         
+        /// <summary>
+        /// Update the enemy list reference (useful when enemies are loaded after initialization)
+        /// </summary>
+        public void UpdateEnemies(List<Enemy> enemies)
+        {
+            _enemies = enemies;
+        }
+        
         public float LastCollisionCheckTimeMs => _lastCollisionCheckTimeMs;
         public int CacheHitRate => _cacheMisses > 0 ? (_cacheHits * 100) / (_cacheHits + _cacheMisses) : 0;
 
@@ -100,6 +108,15 @@ namespace Project9
         /// </summary>
         public bool CheckCollision(Vector2 position, bool includeEnemies)
         {
+            return CheckCollision(position, includeEnemies, null);
+        }
+
+        /// <summary>
+        /// Check collision at position with option to include/exclude enemies and exclude a specific position
+        /// (useful to prevent entity from colliding with itself)
+        /// </summary>
+        public bool CheckCollision(Vector2 position, bool includeEnemies, Vector2? excludePosition)
+        {
             // Entity collision radius with buffer to keep away from walls
             float effectiveRadius = GameConfig.EntityCollisionRadius + GameConfig.CollisionBuffer;
             
@@ -108,6 +125,12 @@ namespace Project9
             {
                 foreach (var enemy in _enemies)
                 {
+                    // Skip if this enemy's position matches the exclude position (entity checking its own position)
+                    if (excludePosition.HasValue && Vector2.DistanceSquared(enemy.Position, excludePosition.Value) < 1.0f)
+                    {
+                        continue;
+                    }
+                    
                     // Sphere-sphere collision: distance < sum of radii
                     float distanceBetweenCenters = Vector2.Distance(position, enemy.Position);
                     float combinedRadius = effectiveRadius * 2; // Both have same radius
@@ -249,7 +272,7 @@ namespace Project9
         /// Perform swept collision detection and return the safe position
         /// This prevents tunneling through thin walls
         /// </summary>
-        public Vector2 SweptCollisionCheck(Vector2 fromPos, Vector2 toPos, bool includeEnemies = true)
+        public Vector2 SweptCollisionCheck(Vector2 fromPos, Vector2 toPos, bool includeEnemies = true, Vector2? excludePosition = null)
         {
             Vector2 direction = toPos - fromPos;
             float distance = direction.Length();
@@ -268,7 +291,7 @@ namespace Project9
                 float t = (float)i / steps;
                 Vector2 testPos = fromPos + direction * (distance * t);
                 
-                if (CheckCollision(testPos, includeEnemies))
+                if (CheckCollision(testPos, includeEnemies, excludePosition))
                 {
                     // Found collision - binary search for exact collision point
                     float minT = (float)(i - 1) / steps;
@@ -279,7 +302,7 @@ namespace Project9
                         float midT = (minT + maxT) * 0.5f;
                         Vector2 midPos = fromPos + direction * (distance * midT);
                         
-                        if (CheckCollision(midPos, includeEnemies))
+                        if (CheckCollision(midPos, includeEnemies, excludePosition))
                         {
                             maxT = midT;
                         }
@@ -301,7 +324,7 @@ namespace Project9
         /// Move with collision resolution - returns final position after sliding
         /// This is the main method entities should use for smooth movement
         /// </summary>
-        public Vector2 MoveWithCollision(Vector2 fromPos, Vector2 toPos, bool includeEnemies = true, int maxIterations = 3)
+        public Vector2 MoveWithCollision(Vector2 fromPos, Vector2 toPos, bool includeEnemies = true, int maxIterations = 3, Vector2? excludePosition = null)
         {
             Vector2 currentPos = fromPos;
             Vector2 remainingMovement = toPos - fromPos;
@@ -315,13 +338,13 @@ namespace Project9
                 Vector2 targetPos = currentPos + remainingMovement;
                 
                 // Check if we can move directly
-                if (!CheckCollision(targetPos, includeEnemies))
+                if (!CheckCollision(targetPos, includeEnemies, excludePosition))
                 {
                     return targetPos;
                 }
                 
                 // Swept collision to find where we hit
-                Vector2 hitPos = SweptCollisionCheck(currentPos, targetPos, includeEnemies);
+                Vector2 hitPos = SweptCollisionCheck(currentPos, targetPos, includeEnemies, excludePosition);
                 
                 // If we didn't move at all, try to get unstuck
                 if (Vector2.DistanceSquared(currentPos, hitPos) < 0.1f)
@@ -332,7 +355,7 @@ namespace Project9
                     {
                         // Push out slightly
                         Vector2 pushOut = currentPos + pushNormal * 2.0f;
-                        if (!CheckCollision(pushOut, includeEnemies))
+                        if (!CheckCollision(pushOut, includeEnemies, excludePosition))
                         {
                             currentPos = pushOut;
                             continue;
@@ -381,17 +404,39 @@ namespace Project9
         /// </summary>
         public bool IsLineOfSightBlocked(Vector2 from, Vector2 to)
         {
+            return IsLineOfSightBlocked(from, to, null);
+        }
+
+        /// <summary>
+        /// Check if line of sight is blocked by collision, with optional position to exclude
+        /// </summary>
+        public bool IsLineOfSightBlocked(Vector2 from, Vector2 to, Vector2? excludePosition)
+        {
             Vector2 direction = to - from;
             float distance = direction.Length();
+            
+            if (distance < 0.1f)
+                return false; // Same position, line of sight not blocked
+            
             direction.Normalize();
             
-            int samples = (int)(distance / 16.0f) + 1;
+            // Start sampling slightly away from 'from' position to avoid self-collision
+            // and end slightly before 'to' position to avoid blocking at destination
+            float startOffset = 10.0f; // Skip first 10 pixels from start
+            float endOffset = 10.0f;   // Skip last 10 pixels before end
+            float effectiveDistance = distance - startOffset - endOffset;
+            
+            if (effectiveDistance <= 0)
+                return false; // Too close, consider line of sight clear
+            
+            int samples = (int)(effectiveDistance / 16.0f) + 1;
             for (int i = 0; i <= samples; i++)
             {
                 float t = (float)i / samples;
-                Vector2 samplePoint = from + direction * (distance * t);
+                Vector2 samplePoint = from + direction * (startOffset + effectiveDistance * t);
                 
-                if (CheckCollision(samplePoint))
+                // Exclude the 'from' position if provided (entity checking its own line of sight)
+                if (CheckCollision(samplePoint, true, excludePosition))
                 {
                     return true;
                 }

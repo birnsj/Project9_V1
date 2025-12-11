@@ -11,7 +11,7 @@ namespace Project9
     {
         private Player _player;
         private List<Enemy> _enemies = new List<Enemy>();
-        private CollisionManager _collisionManager;
+        private CollisionManager? _collisionManager;
         
         // Performance tracking
         private System.Diagnostics.Stopwatch _pathfindingStopwatch = new System.Diagnostics.Stopwatch();
@@ -27,9 +27,19 @@ namespace Project9
         public int ActivePathfindingCount => _activePathfindingCount;
         public bool IsFollowingCursor => _isFollowingCursor;
 
-        public EntityManager(Player player, CollisionManager collisionManager)
+        /// <summary>
+        /// Create EntityManager with player (CollisionManager can be set later)
+        /// </summary>
+        public EntityManager(Player player)
         {
             _player = player;
+        }
+        
+        /// <summary>
+        /// Set the CollisionManager (must be called before Update)
+        /// </summary>
+        public void SetCollisionManager(CollisionManager collisionManager)
+        {
             _collisionManager = collisionManager;
         }
 
@@ -56,6 +66,9 @@ namespace Project9
         /// </summary>
         public void Update(float deltaTime, Vector2? followPosition)
         {
+            if (_collisionManager == null)
+                throw new InvalidOperationException("CollisionManager must be set before calling Update");
+            
             _pathfindingStopwatch.Restart();
             _activePathfindingCount = 0;
             
@@ -80,12 +93,14 @@ namespace Project9
             // Update all enemies
             foreach (var enemy in _enemies)
             {
+                // Capture enemy position for collision checking (to exclude self from collision)
+                Vector2 enemyCurrentPos = enemy.Position;
                 enemy.Update(
                     _player.Position, 
                     deltaTime, 
                     _player.IsSneaking, 
-                    (pos) => _collisionManager.CheckCollision(pos), 
-                    (from, to) => _collisionManager.IsLineOfSightBlocked(from, to),
+                    (pos) => _collisionManager.CheckCollision(pos, true, enemyCurrentPos), 
+                    (from, to) => _collisionManager.IsLineOfSightBlocked(from, to, enemyCurrentPos),
                     _collisionManager
                 );
                 
@@ -113,12 +128,15 @@ namespace Project9
         /// </summary>
         public void MovePlayerTo(Vector2 target)
         {
+            if (_collisionManager == null)
+                throw new InvalidOperationException("CollisionManager must be set before calling MovePlayerTo");
+            
             // Check if enemies are blocking the path (they move, so timing matters)
             bool enemyNearTarget = false;
             foreach (var enemy in _enemies)
             {
                 float distToTarget = Vector2.Distance(enemy.Position, target);
-                if (distToTarget < 50.0f) // Within enemy collision radius
+                if (distToTarget < GameConfig.EnemyNearTargetThreshold)
                 {
                     enemyNearTarget = true;
                     LogOverlay.Log($"[EntityManager] Enemy near target at ({enemy.Position.X:F1}, {enemy.Position.Y:F1}), dist={distToTarget:F1}px", LogLevel.Warning);

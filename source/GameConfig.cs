@@ -37,6 +37,9 @@ namespace Project9
         /// <summary>Detection range multiplier when player is sneaking</summary>
         public const float EnemySneakDetectionMultiplier = 0.5f;
         
+        /// <summary>Distance threshold for considering an enemy "near" a target position (pixels)</summary>
+        public const float EnemyNearTargetThreshold = 50.0f;
+        
         // ===== PATHFINDING =====
         /// <summary>Grid cell width for pathfinding (pixels)</summary>
         public const float PathfindingGridCellWidth = 64.0f;
