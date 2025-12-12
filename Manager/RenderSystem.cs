@@ -13,7 +13,7 @@ namespace Project9
         private GraphicsDevice _graphicsDevice;
         private SpriteBatch _spriteBatch;
         private IsometricMap _map;
-        private Camera _camera;
+        private ViewportCamera _camera;
         private SpriteFont? _uiFont;
         
         private bool _showGrid64x32 = false;
@@ -59,7 +59,7 @@ namespace Project9
         
         public int LastDrawCallCount => _lastDrawCallCount;
 
-        public RenderSystem(GraphicsDevice graphicsDevice, SpriteBatch spriteBatch, IsometricMap map, Camera camera, SpriteFont? uiFont)
+        public RenderSystem(GraphicsDevice graphicsDevice, SpriteBatch spriteBatch, IsometricMap map, ViewportCamera camera, SpriteFont? uiFont)
         {
             _graphicsDevice = graphicsDevice;
             _spriteBatch = spriteBatch;
@@ -121,6 +121,14 @@ namespace Project9
             {
                 DrawGrid64x32(_spriteBatch);
                 _lastDrawCallCount++;
+            }
+
+            // Draw cameras (before enemies so they appear behind)
+            foreach (var camera in entityManager.Cameras)
+            {
+                camera.DrawSightCone(_spriteBatch);
+                camera.Draw(_spriteBatch);
+                _lastDrawCallCount += 2; // Sight cone, sprite
             }
 
             // Draw enemies
@@ -194,6 +202,25 @@ namespace Project9
                         50.0f
                     );
                     _spriteBatch.DrawString(_uiFont, sneakText, sneakPosition, Color.Purple);
+                }
+                
+                // Alarm countdown
+                if (entityManager.AlarmActive)
+                {
+                    int secondsRemaining = (int)Math.Ceiling(entityManager.AlarmTimer);
+                    string alarmText = $"ALARM: {secondsRemaining}";
+                    Vector2 alarmTextSize = _uiFont.MeasureString(alarmText);
+                    Vector2 alarmPosition = new Vector2(
+                        _graphicsDevice.Viewport.Width / 2.0f - alarmTextSize.X / 2.0f,
+                        100.0f
+                    );
+                    
+                    // Flash red when time is running out
+                    Color alarmColor = secondsRemaining <= 10 ? Color.Red : Color.OrangeRed;
+                    
+                    // Draw shadow for better visibility
+                    _spriteBatch.DrawString(_uiFont, alarmText, alarmPosition + new Vector2(2, 2), Color.Black);
+                    _spriteBatch.DrawString(_uiFont, alarmText, alarmPosition, alarmColor);
                 }
 
                 _spriteBatch.End();

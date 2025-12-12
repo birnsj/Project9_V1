@@ -44,6 +44,10 @@ namespace Project9
                 _sharedClosedSet.Clear();
                 _sharedCameFrom.Clear();
                 
+                // Corner offset for collision checking (check corners to avoid clipping obstacles)
+                float cornerOffsetX = gridCellWidth * 0.4f;
+                float cornerOffsetY = gridCellHeight * 0.4f;
+                
                 // Convert world coordinates to grid coordinates
                 (int x, int y) startCell = (
                     (int)Math.Floor(start.X / gridCellWidth),
@@ -76,14 +80,21 @@ namespace Project9
                     endCell.y * gridCellHeight + gridCellHeight / 2
                 );
                 
-                if (checkCollision(endWorldPosCheck))
+                // Check center and corners for better accuracy (using offsets declared at method start)
+                bool endBlocked = checkCollision(endWorldPosCheck) ||
+                    checkCollision(new Vector2(endWorldPosCheck.X - cornerOffsetX, endWorldPosCheck.Y - cornerOffsetY)) ||
+                    checkCollision(new Vector2(endWorldPosCheck.X + cornerOffsetX, endWorldPosCheck.Y - cornerOffsetY)) ||
+                    checkCollision(new Vector2(endWorldPosCheck.X - cornerOffsetX, endWorldPosCheck.Y + cornerOffsetY)) ||
+                    checkCollision(new Vector2(endWorldPosCheck.X + cornerOffsetX, endWorldPosCheck.Y + cornerOffsetY));
+                
+                if (endBlocked)
                 {
                     // End is blocked - try to find a nearby valid cell
                     bool foundValidEnd = false;
                     (int x, int y) originalEndCell = endCell;
                     
-                    // Try nearby cells in expanding radius
-                    for (int radius = 1; radius <= 3 && !foundValidEnd; radius++)
+                    // Try nearby cells in expanding radius (increased for better pathfinding)
+                    for (int radius = 1; radius <= 8 && !foundValidEnd; radius++)
                     {
                         for (int dx = -radius; dx <= radius && !foundValidEnd; dx++)
                         {
@@ -97,7 +108,14 @@ namespace Project9
                                     testCell.y * gridCellHeight + gridCellHeight / 2
                                 );
                                 
-                                if (!checkCollision(testWorldPos))
+                                // Check center and corners
+                                bool testBlocked = checkCollision(testWorldPos) ||
+                                    checkCollision(new Vector2(testWorldPos.X - cornerOffsetX, testWorldPos.Y - cornerOffsetY)) ||
+                                    checkCollision(new Vector2(testWorldPos.X + cornerOffsetX, testWorldPos.Y - cornerOffsetY)) ||
+                                    checkCollision(new Vector2(testWorldPos.X - cornerOffsetX, testWorldPos.Y + cornerOffsetY)) ||
+                                    checkCollision(new Vector2(testWorldPos.X + cornerOffsetX, testWorldPos.Y + cornerOffsetY));
+                                
+                                if (!testBlocked)
                                 {
                                     endCell = testCell;
                                     foundValidEnd = true;
@@ -110,6 +128,10 @@ namespace Project9
                     {
                         LogOverlay.Log($"[Pathfinding] End position blocked and no nearby valid cells found at ({end.X:F1}, {end.Y:F1})", LogLevel.Warning);
                     }
+                    else
+                    {
+                        LogOverlay.Log($"[Pathfinding] Found alternative end cell ({endCell.x}, {endCell.y}) near blocked position", LogLevel.Info);
+                    }
                 }
                 
                 // Check if start position is in collision - if so, try to find a nearby valid start
@@ -118,26 +140,44 @@ namespace Project9
                     startCell.y * gridCellHeight + gridCellHeight / 2
                 );
                 
-                if (checkCollision(startWorldPos))
+                // Check center and corners for better accuracy
+                bool startBlocked = checkCollision(startWorldPos) ||
+                    checkCollision(new Vector2(startWorldPos.X - cornerOffsetX, startWorldPos.Y - cornerOffsetY)) ||
+                    checkCollision(new Vector2(startWorldPos.X + cornerOffsetX, startWorldPos.Y - cornerOffsetY)) ||
+                    checkCollision(new Vector2(startWorldPos.X - cornerOffsetX, startWorldPos.Y + cornerOffsetY)) ||
+                    checkCollision(new Vector2(startWorldPos.X + cornerOffsetX, startWorldPos.Y + cornerOffsetY));
+                
+                if (startBlocked)
                 {
                     // Start is blocked - try to find a nearby valid cell
                     bool foundValidStart = false;
-                    for (int dx = -1; dx <= 1 && !foundValidStart; dx++)
+                    for (int radius = 1; radius <= 3 && !foundValidStart; radius++)
                     {
-                        for (int dy = -1; dy <= 1 && !foundValidStart; dy++)
+                        for (int dx = -radius; dx <= radius && !foundValidStart; dx++)
                         {
-                            if (dx == 0 && dy == 0) continue;
-                            
-                            (int x, int y) testCell = (startCell.x + dx, startCell.y + dy);
-                            Vector2 testWorldPos = new Vector2(
-                                testCell.x * gridCellWidth + gridCellWidth / 2,
-                                testCell.y * gridCellHeight + gridCellHeight / 2
-                            );
-                            
-                            if (!checkCollision(testWorldPos))
+                            for (int dy = -radius; dy <= radius && !foundValidStart; dy++)
                             {
-                                startCell = testCell;
-                                foundValidStart = true;
+                                if (dx == 0 && dy == 0) continue;
+                                if (Math.Abs(dx) < radius && Math.Abs(dy) < radius) continue; // Only check perimeter at each radius
+                                
+                                (int x, int y) testCell = (startCell.x + dx, startCell.y + dy);
+                                Vector2 testWorldPos = new Vector2(
+                                    testCell.x * gridCellWidth + gridCellWidth / 2,
+                                    testCell.y * gridCellHeight + gridCellHeight / 2
+                                );
+                                
+                                // Check center and corners
+                                bool testBlocked = checkCollision(testWorldPos) ||
+                                    checkCollision(new Vector2(testWorldPos.X - cornerOffsetX, testWorldPos.Y - cornerOffsetY)) ||
+                                    checkCollision(new Vector2(testWorldPos.X + cornerOffsetX, testWorldPos.Y - cornerOffsetY)) ||
+                                    checkCollision(new Vector2(testWorldPos.X - cornerOffsetX, testWorldPos.Y + cornerOffsetY)) ||
+                                    checkCollision(new Vector2(testWorldPos.X + cornerOffsetX, testWorldPos.Y + cornerOffsetY));
+                                
+                                if (!testBlocked)
+                                {
+                                    startCell = testCell;
+                                    foundValidStart = true;
+                                }
                             }
                         }
                     }
@@ -146,6 +186,10 @@ namespace Project9
                     if (!foundValidStart)
                     {
                         LogOverlay.Log($"[Pathfinding] Start position blocked and no nearby valid cells found at ({start.X:F1}, {start.Y:F1})", LogLevel.Warning);
+                    }
+                    else
+                    {
+                        LogOverlay.Log($"[Pathfinding] Found alternative start cell ({startCell.x}, {startCell.y}) near blocked position", LogLevel.Info);
                     }
                 }
                 
@@ -189,12 +233,20 @@ namespace Project9
                                 continue;
                             
                             // Check collision for this neighbor
+                            // Check center and also check corners to ensure we don't clip obstacles
                             Vector2 neighborWorldPos = new Vector2(
                                 neighbor.x * gridCellWidth + gridCellWidth / 2,
                                 neighbor.y * gridCellHeight + gridCellHeight / 2
                             );
                             
-                            if (checkCollision(neighborWorldPos))
+                            // Check center and corners for better accuracy
+                            bool neighborBlocked = checkCollision(neighborWorldPos) ||
+                                checkCollision(new Vector2(neighborWorldPos.X - cornerOffsetX, neighborWorldPos.Y - cornerOffsetY)) ||
+                                checkCollision(new Vector2(neighborWorldPos.X + cornerOffsetX, neighborWorldPos.Y - cornerOffsetY)) ||
+                                checkCollision(new Vector2(neighborWorldPos.X - cornerOffsetX, neighborWorldPos.Y + cornerOffsetY)) ||
+                                checkCollision(new Vector2(neighborWorldPos.X + cornerOffsetX, neighborWorldPos.Y + cornerOffsetY));
+                            
+                            if (neighborBlocked)
                                 continue;
                             
                             // Calculate movement cost (diagonal = 1.414, orthogonal = 1.0)

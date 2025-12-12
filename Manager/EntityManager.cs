@@ -11,6 +11,7 @@ namespace Project9
     {
         private Player _player;
         private List<Enemy> _enemies = new List<Enemy>();
+        private List<SecurityCamera> _cameras = new List<SecurityCamera>();
         private CollisionManager? _collisionManager;
         
         // Performance tracking
@@ -20,12 +21,20 @@ namespace Project9
         
         // Track if player is following cursor (for UI purposes)
         private bool _isFollowingCursor = false;
+        
+        // Alarm system
+        private float _alarmTimer = 0.0f;
+        private const float ALARM_DURATION = 15.0f; // 15 seconds
+        private bool _alarmActive = false;
 
         public Player Player => _player;
         public List<Enemy> Enemies => _enemies;
+        public List<SecurityCamera> Cameras => _cameras;
         public float LastPathfindingTimeMs => _lastPathfindingTimeMs;
         public int ActivePathfindingCount => _activePathfindingCount;
         public bool IsFollowingCursor => _isFollowingCursor;
+        public float AlarmTimer => _alarmTimer;
+        public bool AlarmActive => _alarmActive;
 
         /// <summary>
         /// Create EntityManager with player (CollisionManager can be set later)
@@ -58,6 +67,24 @@ namespace Project9
                     _enemies.Add(new Enemy(enemyPosition));
                 }
                 Console.WriteLine($"[EntityManager] Loaded {_enemies.Count} enemies");
+            }
+        }
+
+        /// <summary>
+        /// Load cameras from map data
+        /// </summary>
+        public void LoadCameras(Project9.Shared.MapData? mapData)
+        {
+            _cameras.Clear();
+            
+            if (mapData?.Cameras != null)
+            {
+                foreach (var cameraData in mapData.Cameras)
+                {
+                    Vector2 cameraPosition = new Vector2(cameraData.X, cameraData.Y);
+                    _cameras.Add(new SecurityCamera(cameraPosition, cameraData.Rotation, cameraData.DetectionRange, cameraData.SightConeAngle));
+                }
+                Console.WriteLine($"[EntityManager] Loaded {_cameras.Count} cameras");
             }
         }
 
@@ -138,18 +165,89 @@ namespace Project9
                 _activePathfindingCount++;
             }
 
+            // Update all cameras first (they can alert enemies)
+            bool anyCameraDetecting = false;
+            foreach (var camera in _cameras)
+            {
+                camera.Update(deltaTime);
+                bool cameraDetected = camera.UpdateDetection(
+                    _player.Position,
+                    deltaTime,
+                    _player.IsSneaking,
+                    (from, to) => _collisionManager.IsLineOfSightBlocked(from, to),
+                    _enemies
+                );
+                
+                // Check if camera is currently detecting player (in sight cone with line of sight)
+                if (camera.IsCurrentlyDetecting(_player.Position, _player.IsSneaking, (from, to) => _collisionManager.IsLineOfSightBlocked(from, to)))
+                {
+                    anyCameraDetecting = true;
+                }
+            }
+            
+            // Handle alarm state
+            if (anyCameraDetecting)
+            {
+                // Camera currently detecting player - start/reset alarm timer
+                _alarmTimer = ALARM_DURATION;
+                _alarmActive = true;
+            }
+            else if (_alarmActive)
+            {
+                // No cameras currently detecting - count down alarm timer
+                _alarmTimer -= deltaTime;
+                if (_alarmTimer <= 0.0f)
+                {
+                    // Alarm expired - reset everything
+                    _alarmTimer = 0.0f;
+                    _alarmActive = false;
+                    
+                    // Check enemies for direct detection
+                    // Enemies without direct detection should return to original positions
+                    foreach (var enemy in _enemies)
+                    {
+                        if (enemy.HasDetectedPlayer)
+                        {
+                            // Check if enemy has direct line of sight to player
+                            Vector2 directionToPlayer = _player.Position - enemy.Position;
+                            float distanceToPlayer = directionToPlayer.Length();
+                            float effectiveRange = _player.IsSneaking 
+                                ? enemy.DetectionRange * GameConfig.EnemySneakDetectionMultiplier 
+                                : enemy.DetectionRange;
+                            
+                            bool inRange = distanceToPlayer <= effectiveRange;
+                            bool hasLineOfSight = inRange && !_collisionManager.IsLineOfSightBlocked(enemy.Position, _player.Position, enemy.Position);
+                            
+                            // If enemy doesn't have direct detection, reset their detection
+                            if (!hasLineOfSight)
+                            {
+                                // Reset enemy detection so they return to original position
+                                enemy.ResetDetection();
+                            }
+                        }
+                    }
+                }
+            }
+
             // Update all enemies
             foreach (var enemy in _enemies)
             {
                 // Capture enemy position for collision checking (to exclude self from collision)
                 Vector2 enemyCurrentPos = enemy.Position;
+                
+                // Create terrain-only collision check for pathfinding (like player)
+                // Enemy collision will be handled during movement via MoveWithCollision sliding
+                Func<Vector2, bool> terrainOnlyCheck = (pos) => _collisionManager.CheckCollision(pos, false);
+                
                 enemy.Update(
                     _player.Position, 
                     deltaTime, 
                     _player.IsSneaking, 
                     (pos) => _collisionManager.CheckCollision(pos, true, enemyCurrentPos), 
                     (from, to) => _collisionManager.IsLineOfSightBlocked(from, to, enemyCurrentPos),
-                    _collisionManager
+                    _collisionManager,
+                    terrainOnlyCheck, // Pass terrain-only check for pathfinding
+                    _alarmActive
                 );
                 
                 // Count active pathfinding

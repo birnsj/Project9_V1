@@ -184,23 +184,19 @@ namespace Project9
                         
                         // Smooth the path to remove unnecessary waypoints
                         // But don't simplify too aggressively - we need waypoints to avoid obstacles
-                        _path = PathfindingService.SimplifyPath(_path, 0.15f); // Increased threshold to keep more waypoints
+                        // Use much larger threshold to preserve most waypoints for navigation around obstacles
+                        List<Vector2> originalPath = new List<Vector2>(_path);
+                        _path = PathfindingService.SimplifyPath(_path, 0.4f); // Much larger threshold to keep most waypoints
                         
                         if (_path != null && _path.Count > 0)
                         {
-                            LogOverlay.Log($"[Player] Path simplified to {_path.Count} waypoints", LogLevel.Info);
+                            LogOverlay.Log($"[Player] Path simplified from {originalPath.Count} to {_path.Count} waypoints", LogLevel.Info);
                         }
-                        else if (_path == null || _path.Count == 0)
+                        else
                         {
                             LogOverlay.Log("[Player] WARNING: Path simplification removed all waypoints - using original path", LogLevel.Warning);
                             // Restore original path if simplification removed everything
-                            _path = PathfindingService.FindPath(
-                                _position, 
-                                target, 
-                                pathfindingCheck,
-                                GameConfig.PathfindingGridCellWidth,
-                                GameConfig.PathfindingGridCellHeight
-                            );
+                            _path = originalPath;
                         }
                     }
                 }

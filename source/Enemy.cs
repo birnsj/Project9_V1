@@ -19,6 +19,15 @@ namespace Project9
         private float _exclamationTimer;
         private float _exclamationDuration = 1.0f;
         
+        // Search behavior (when player goes out of view during alarm)
+        private bool _isSearching = false;
+        private Vector2 _lastKnownPlayerPosition;
+        private Vector2 _searchTarget;
+        private float _searchTimer = 0.0f;
+        private bool _previouslyHadLineOfSight = false; // Track if we had line of sight previously
+        private const float SEARCH_DURATION = 5.0f; // Search for 5 seconds
+        private const float SEARCH_RADIUS = 200.0f; // Search within 200 pixels of last known position
+        
         // Sight cone and rotation
         private float _rotation;
         
@@ -40,6 +49,31 @@ namespace Project9
         public float DetectionRange => _detectionRange;
         public bool IsAttacking => _isAttacking;
         public bool HasDetectedPlayer => _hasDetectedPlayer;
+        
+        /// <summary>
+        /// Force the enemy to detect the player (called by cameras when they detect the player)
+        /// </summary>
+        public void ForceDetectPlayer(Vector2 playerPosition)
+        {
+            // Always set detection, even if already detected (refreshes the alert)
+            Console.WriteLine($"[Enemy] ForceDetectPlayer called at ({_position.X:F1}, {_position.Y:F1}). Was detected: {_hasDetectedPlayer}");
+            _hasDetectedPlayer = true;
+            _exclamationTimer = _exclamationDuration;
+            _lastKnownPlayerPosition = playerPosition; // Set last known position so enemy knows where to go
+            _isSearching = false; // Stop searching if we're alerted
+            _searchTimer = 0.0f; // Reset search timer
+            Console.WriteLine($"[Enemy] Now HasDetectedPlayer = {_hasDetectedPlayer}, lastKnownPos = ({_lastKnownPlayerPosition.X:F1}, {_lastKnownPlayerPosition.Y:F1})");
+        }
+        
+        /// <summary>
+        /// Reset enemy detection (called when alarm expires and enemy doesn't have direct detection)
+        /// </summary>
+        public void ResetDetection()
+        {
+            _hasDetectedPlayer = false;
+            _exclamationTimer = 0.0f;
+            _path?.Clear(); // Clear path so they can return to original position
+        }
 
         public Enemy(Vector2 startPosition) 
             : base(startPosition, Color.DarkRed, GameConfig.EnemyChaseSpeed, GameConfig.EnemyChaseSpeed)
@@ -94,7 +128,7 @@ namespace Project9
             // This signature for base compatibility - use full Update below
         }
 
-        public void Update(Vector2 playerPosition, float deltaTime, bool playerIsSneaking = false, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null)
+        public void Update(Vector2 playerPosition, float deltaTime, bool playerIsSneaking = false, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, Func<Vector2, bool>? checkTerrainOnly = null, bool alarmActive = false)
         {
             UpdateFlashing(deltaTime);
 
@@ -122,33 +156,93 @@ namespace Project9
             }
 
             bool playerInRange = distanceToPlayer <= effectiveDetectionRange;
+            bool hasLineOfSight = false;
             
             if (playerInRange)
             {
                 bool lineOfSightBlocked = checkLineOfSight != null && checkLineOfSight(_position, playerPosition);
+                hasLineOfSight = !lineOfSightBlocked;
                 
                 if (playerIsSneaking && distanceToPlayer <= effectiveDetectionRange && !_hasDetectedPlayer)
                 {
-                    if (IsPointInSightCone(playerPosition) && !lineOfSightBlocked)
+                    if (IsPointInSightCone(playerPosition) && hasLineOfSight)
                     {
                         _hasDetectedPlayer = true;
                         _exclamationTimer = _exclamationDuration;
+                        _lastKnownPlayerPosition = playerPosition;
+                        _isSearching = false; // Stop searching if we see player
                     }
                 }
                 else
                 {
-                    if (!lineOfSightBlocked)
+                    if (hasLineOfSight)
                     {
                         if (!_hasDetectedPlayer)
                         {
                             _exclamationTimer = _exclamationDuration;
                         }
                         _hasDetectedPlayer = true;
+                        _lastKnownPlayerPosition = playerPosition;
+                        _isSearching = false; // Stop searching if we see player
                     }
                 }
             }
+            
+            // Handle search behavior during alarm
+            // Only start searching if we previously had line of sight and then lost it
+            // Don't search immediately if we were alerted by camera without line of sight
+            if (alarmActive && _hasDetectedPlayer && !hasLineOfSight && !_isSearching && _previouslyHadLineOfSight)
+            {
+                // Player lost - start searching (we had line of sight before, now we don't)
+                _isSearching = true;
+                _searchTimer = SEARCH_DURATION;
+                _lastKnownPlayerPosition = playerPosition;
+                // Set first search target near last known position
+                float randomAngle = (float)(_random.NextDouble() * Math.PI * 2);
+                float randomDistance = (float)(_random.NextDouble() * SEARCH_RADIUS);
+                _searchTarget = _lastKnownPlayerPosition + new Vector2(
+                    (float)Math.Cos(randomAngle) * randomDistance,
+                    (float)Math.Sin(randomAngle) * randomDistance
+                );
+            }
+            
+            // Track line of sight state for next frame
+            _previouslyHadLineOfSight = hasLineOfSight;
+            
+            // Update search timer
+            if (_isSearching)
+            {
+                _searchTimer -= deltaTime;
+                if (_searchTimer <= 0.0f)
+                {
+                    // Search time expired - return to original position
+                    _isSearching = false;
+                    _hasDetectedPlayer = false;
+                    _path?.Clear();
+                }
+            }
 
-            if (_hasDetectedPlayer && playerInRange)
+            // If enemy has detected player (either directly or via camera alert), chase them
+            // Use a large chase range when alerted (1024 pixels, same as camera alert radius)
+            // During alarm, enemies should chase even without direct line of sight
+            const float maxChaseRange = 1024.0f;
+            
+            // If alarm is active, enemies chase even without line of sight
+            // Otherwise, they need line of sight to chase
+            bool shouldChase = _hasDetectedPlayer && !_isSearching && distanceToPlayer <= maxChaseRange;
+            if (shouldChase && !alarmActive)
+            {
+                // Only require line of sight if alarm is not active
+                shouldChase = hasLineOfSight;
+            }
+            
+            // Debug logging
+            if (_hasDetectedPlayer && !shouldChase)
+            {
+                Console.WriteLine($"[Enemy] HasDetectedPlayer=true but not chasing. isSearching={_isSearching}, distance={distanceToPlayer:F1}, maxRange={maxChaseRange}, hasLoS={hasLineOfSight}, alarmActive={alarmActive}");
+            }
+            
+            if (shouldChase)
             {
                 if (distanceToPlayer <= _attackRange)
                 {
@@ -165,7 +259,7 @@ namespace Project9
                 else
                 {
                     _isAttacking = false;
-                    ChaseTarget(playerPosition, distanceToPlayer, deltaTime, checkCollision, collisionManager);
+                    ChaseTarget(playerPosition, distanceToPlayer, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
                 }
                 
                 if (distanceToPlayer > _attackRange)
@@ -174,39 +268,54 @@ namespace Project9
                     _rotation = (float)Math.Atan2(directionToPlayer.Y, directionToPlayer.X);
                 }
             }
-            else if (_hasDetectedPlayer && !playerInRange)
+            else if (_isSearching)
             {
+                // Searching for player during alarm
                 _isAttacking = false;
-                ReturnToOriginal(deltaTime, checkCollision, collisionManager);
+                SearchBehavior(deltaTime, checkCollision, collisionManager, checkTerrainOnly);
+            }
+            else if (_hasDetectedPlayer && distanceToPlayer > maxChaseRange)
+            {
+                // Player too far away, return to original position
+                _isAttacking = false;
+                ReturnToOriginal(deltaTime, checkCollision, collisionManager, checkTerrainOnly);
             }
             else
             {
                 _isAttacking = false;
-                PatrolBehavior(deltaTime, checkCollision, collisionManager);
+                PatrolBehavior(deltaTime, checkCollision, collisionManager, checkTerrainOnly);
             }
         }
 
-        private void ChaseTarget(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
+        private void ChaseTarget(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null)
         {
             if (distanceToTarget <= _attackRange)
                 return;
 
-            bool pathClear = CheckDirectPath(target, checkCollision);
+            // Use terrain-only check for direct path validation (like player)
+            Func<Vector2, bool> terrainCheck = checkTerrainOnly ?? ((pos) => checkCollision != null ? checkCollision(pos) : false);
+            bool pathClear = CheckDirectPath(target, terrainCheck);
             
             // Recalculate path if blocked or if path is empty/invalid
-            if (!pathClear && (_path == null || _path.Count == 0) && checkCollision != null)
+            // Use terrain-only collision for pathfinding - enemy collision handled during movement
+            if (!pathClear && (_path == null || _path.Count == 0) && checkTerrainOnly != null)
             {
                 _path = PathfindingService.FindPath(
                     _position, 
                     target, 
-                    checkCollision,
+                    checkTerrainOnly,
                     GameConfig.PathfindingGridCellWidth,
                     GameConfig.PathfindingGridCellHeight
                 );
                 if (_path != null && _path.Count > 0)
                 {
-                    // Use less aggressive simplification to keep waypoints needed for obstacles
-                    _path = PathfindingService.SimplifyPath(_path, 0.15f);
+                    // Use much less aggressive simplification to keep most waypoints needed for obstacles
+                    List<Vector2> originalPath = new List<Vector2>(_path);
+                    _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                    if (_path == null || _path.Count == 0)
+                    {
+                        _path = originalPath; // Restore if simplification removed everything
+                    }
                 }
             }
             else if (pathClear)
@@ -216,35 +325,42 @@ namespace Project9
             
             if (_path != null && _path.Count > 0)
             {
-                FollowPath(target, deltaTime, checkCollision, collisionManager);
+                FollowPath(target, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
             }
             else
             {
-                MoveDirectly(target, distanceToTarget, deltaTime, checkCollision, collisionManager);
+                MoveDirectly(target, distanceToTarget, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
             }
         }
 
-        private void ReturnToOriginal(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
+        private void ReturnToOriginal(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null)
         {
             Vector2 directionToOriginal = _originalPosition - _position;
             float distanceToOriginal = directionToOriginal.Length();
             
             if (distanceToOriginal > 5.0f)
             {
-                bool pathClear = CheckDirectPath(_originalPosition, checkCollision);
+                // Use terrain-only check for pathfinding
+                Func<Vector2, bool> terrainCheck = checkTerrainOnly ?? ((pos) => checkCollision != null ? checkCollision(pos) : false);
+                bool pathClear = CheckDirectPath(_originalPosition, terrainCheck);
                 
-                if (!pathClear && (_path == null || _path.Count == 0) && checkCollision != null)
+                if (!pathClear && (_path == null || _path.Count == 0) && checkTerrainOnly != null)
                 {
                     _path = PathfindingService.FindPath(
                         _position, 
                         _originalPosition, 
-                        checkCollision,
+                        checkTerrainOnly,
                         GameConfig.PathfindingGridCellWidth,
                         GameConfig.PathfindingGridCellHeight
                     );
                     if (_path != null && _path.Count > 0)
                     {
-                        _path = PathfindingService.SimplifyPath(_path, 0.15f);
+                        List<Vector2> originalPath = new List<Vector2>(_path);
+                        _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                        if (_path == null || _path.Count == 0)
+                        {
+                            _path = originalPath; // Restore if simplification removed everything
+                        }
                     }
                 }
                 else if (pathClear)
@@ -254,11 +370,11 @@ namespace Project9
                 
                 if (_path != null && _path.Count > 0)
                 {
-                    FollowPath(_originalPosition, deltaTime, checkCollision, collisionManager);
+                    FollowPath(_originalPosition, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
                 }
                 else
                 {
-                    MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager);
+                    MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
                 }
                 
                 directionToOriginal.Normalize();
@@ -272,14 +388,59 @@ namespace Project9
             }
         }
 
-        private void PatrolBehavior(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
+        private void SearchBehavior(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null)
+        {
+            // Move towards search target
+            float distanceToTarget = Vector2.Distance(_position, _searchTarget);
+            
+            if (distanceToTarget < 30.0f)
+            {
+                // Reached search target - pick a new random search point
+                float randomAngle = (float)(_random.NextDouble() * Math.PI * 2);
+                float randomDistance = (float)(_random.NextDouble() * SEARCH_RADIUS);
+                _searchTarget = _lastKnownPlayerPosition + new Vector2(
+                    (float)Math.Cos(randomAngle) * randomDistance,
+                    (float)Math.Sin(randomAngle) * randomDistance
+                );
+            }
+            else
+            {
+                // Move towards search target
+                Vector2 directionToTarget = _searchTarget - _position;
+                float distance = directionToTarget.Length();
+                
+                if (distance > 0)
+                {
+                    directionToTarget.Normalize();
+                    Vector2 desiredPosition = _position + directionToTarget * _currentSpeed * deltaTime;
+                    
+                    if (collisionManager != null)
+                    {
+                        Vector2 finalPos = collisionManager.MoveWithCollision(_position, desiredPosition, true, 3, _position);
+                        if (Vector2.DistanceSquared(_position, finalPos) > 0.01f)
+                        {
+                            _position = finalPos;
+                        }
+                    }
+                    else if (checkCollision == null || !checkCollision(desiredPosition))
+                    {
+                        _position = desiredPosition;
+                    }
+                    
+                    // Update rotation to face search target
+                    _rotation = (float)Math.Atan2(directionToTarget.Y, directionToTarget.X);
+                }
+            }
+        }
+
+        private void PatrolBehavior(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null)
         {
             Vector2 directionToOriginal = _originalPosition - _position;
             float distanceToOriginal = directionToOriginal.Length();
             
             if (distanceToOriginal > 5.0f)
             {
-                MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager);
+                MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
                 directionToOriginal.Normalize();
                 _rotation = (float)Math.Atan2(directionToOriginal.Y, directionToOriginal.X);
             }
@@ -335,7 +496,7 @@ namespace Project9
             return true;
         }
 
-        private void FollowPath(Vector2 finalTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
+        private void FollowPath(Vector2 finalTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null)
         {
             if (_path == null)
                 return;
@@ -370,19 +531,24 @@ namespace Project9
                         }
                         else
                         {
-                            // Stuck - recalculate path
-                            if (checkCollision != null)
+                            // Stuck - recalculate path using terrain-only
+                            if (checkTerrainOnly != null)
                             {
                                 _path = PathfindingService.FindPath(
                                     _position, 
                                     finalTarget, 
-                                    checkCollision,
+                                    checkTerrainOnly,
                                     GameConfig.PathfindingGridCellWidth,
                                     GameConfig.PathfindingGridCellHeight
                                 );
                                 if (_path != null && _path.Count > 0)
                                 {
-                                    _path = PathfindingService.SimplifyPath(_path, 0.15f);
+                                    List<Vector2> originalPath = new List<Vector2>(_path);
+                                    _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                    if (_path == null || _path.Count == 0)
+                                    {
+                                        _path = originalPath;
+                                    }
                                 }
                             }
                             _stuckTimer += deltaTime;
@@ -395,16 +561,25 @@ namespace Project9
                     }
                     else
                     {
-                        _path = PathfindingService.FindPath(
-                            _position, 
-                            finalTarget, 
-                            checkCollision,
-                            GameConfig.PathfindingGridCellWidth,
-                            GameConfig.PathfindingGridCellHeight
-                        );
-                        if (_path != null && _path.Count > 0)
+                        // Recalculate path using terrain-only
+                        if (checkTerrainOnly != null)
                         {
-                            _path = PathfindingService.SimplifyPath(_path);
+                            _path = PathfindingService.FindPath(
+                                _position, 
+                                finalTarget, 
+                                checkTerrainOnly,
+                                GameConfig.PathfindingGridCellWidth,
+                                GameConfig.PathfindingGridCellHeight
+                            );
+                            if (_path != null && _path.Count > 0)
+                            {
+                                List<Vector2> originalPath = new List<Vector2>(_path);
+                                _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                if (_path == null || _path.Count == 0)
+                                {
+                                    _path = originalPath;
+                                }
+                            }
                         }
                         _stuckTimer += deltaTime;
                     }
@@ -412,7 +587,7 @@ namespace Project9
             }
         }
 
-        private void MoveDirectly(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager)
+        private void MoveDirectly(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null)
         {
             Vector2 direction = (target - _position);
             direction.Normalize();
@@ -447,19 +622,24 @@ namespace Project9
                     {
                         _stuckTimer += deltaTime;
                         
-                        if (_stuckTimer > STUCK_THRESHOLD && checkCollision != null)
+                        if (_stuckTimer > STUCK_THRESHOLD && checkTerrainOnly != null)
                         {
                             Console.WriteLine("[Enemy] Stuck for too long, recalculating path");
                             _path = PathfindingService.FindPath(
                                 _position, 
                                 target, 
-                                checkCollision,
+                                checkTerrainOnly,
                                 GameConfig.PathfindingGridCellWidth,
                                 GameConfig.PathfindingGridCellHeight
                             );
                             if (_path != null && _path.Count > 0)
                             {
-                                _path = PathfindingService.SimplifyPath(_path, 0.15f);
+                                List<Vector2> originalPath = new List<Vector2>(_path);
+                                _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                if (_path == null || _path.Count == 0)
+                                {
+                                    _path = originalPath;
+                                }
                             }
                             _stuckTimer = 0.0f;
                         }
@@ -482,19 +662,24 @@ namespace Project9
                     {
                         _stuckTimer += deltaTime;
                         
-                        if (_stuckTimer > STUCK_THRESHOLD && checkCollision != null)
+                        if (_stuckTimer > STUCK_THRESHOLD && checkTerrainOnly != null)
                         {
                             Console.WriteLine("[Enemy] Stuck for too long, recalculating path");
                             _path = PathfindingService.FindPath(
                                 _position, 
                                 target, 
-                                checkCollision,
+                                checkTerrainOnly,
                                 GameConfig.PathfindingGridCellWidth,
                                 GameConfig.PathfindingGridCellHeight
                             );
                             if (_path != null && _path.Count > 0)
                             {
-                                _path = PathfindingService.SimplifyPath(_path, 0.15f);
+                                List<Vector2> originalPath = new List<Vector2>(_path);
+                                _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                if (_path == null || _path.Count == 0)
+                                {
+                                    _path = originalPath;
+                                }
                             }
                             _stuckTimer = 0.0f;
                         }

@@ -41,17 +41,17 @@ namespace Project9
         public const float EnemyNearTargetThreshold = 50.0f;
         
         // ===== PATHFINDING =====
-        /// <summary>Grid cell width for pathfinding (pixels)</summary>
-        public const float PathfindingGridCellWidth = 64.0f;
+        /// <summary>Grid cell width for pathfinding (pixels) - smaller for more nodes and better path accuracy</summary>
+        public const float PathfindingGridCellWidth = 16.0f;
         
-        /// <summary>Grid cell height for pathfinding (pixels)</summary>
-        public const float PathfindingGridCellHeight = 32.0f;
+        /// <summary>Grid cell height for pathfinding (pixels) - smaller for more nodes and better path accuracy</summary>
+        public const float PathfindingGridCellHeight = 8.0f;
         
         /// <summary>Maximum pathfinding search distance (pixels)</summary>
         public const float PathfindingMaxSearchDistance = 800.0f;
         
-        /// <summary>Maximum A* iterations to prevent infinite loops</summary>
-        public const int PathfindingMaxIterations = 500;
+        /// <summary>Maximum A* iterations to prevent infinite loops (increased for finer grid and more nodes)</summary>
+        public const int PathfindingMaxIterations = 3000;
         
         // ===== COLLISION =====
         /// <summary>Spatial hash grid size for collision detection (pixels)</summary>

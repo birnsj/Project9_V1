@@ -15,7 +15,7 @@ namespace Project9
         private SpriteBatch _spriteBatch = null!;
         
         // Core systems
-        private Camera _camera = null!;
+        private ViewportCamera _camera = null!;
         private IsometricMap _map = null!;
         private CollisionManager _collisionManager = null!;
         private EntityManager _entityManager = null!;
@@ -52,7 +52,7 @@ namespace Project9
             _graphics.PreferredBackBufferWidth = 1080;
             _graphics.PreferredBackBufferHeight = 720;
             _graphics.ApplyChanges();
-            _camera = new Camera();
+            _camera = new ViewportCamera();
             base.Initialize();
         }
 
@@ -97,6 +97,7 @@ namespace Project9
             // Create EntityManager first (without CollisionManager)
             _entityManager = new EntityManager(player);
             _entityManager.LoadEnemies(_map.MapData);
+            _entityManager.LoadCameras(_map.MapData);
             
             // Create CollisionManager once with loaded enemies
             _collisionManager = new CollisionManager(_entityManager.Enemies);

@@ -24,6 +24,7 @@ namespace Project9.Editor
         private int? _hoverTileY;
         private bool _isDragging;
         private EnemyData? _draggedEnemy;
+        private CameraData? _draggedCamera;
         private bool _isDraggingPlayer;
         private PointF _dragOffset;
         private bool _showGrid64x32 = false;
@@ -139,6 +140,9 @@ namespace Project9.Editor
             // Snap all enemies to grid
             SnapAllEnemiesToGrid();
             
+            // Snap all cameras to grid
+            SnapAllCamerasToGrid();
+            
             // Center camera on map initially
             CenterCameraOnMap();
             
@@ -152,6 +156,16 @@ namespace Project9.Editor
                 var snappedPos = SnapToGrid(new PointF(enemy.X, enemy.Y));
                 enemy.X = snappedPos.X;
                 enemy.Y = snappedPos.Y;
+            }
+        }
+
+        private void SnapAllCamerasToGrid()
+        {
+            foreach (var camera in _mapData.MapData.Cameras)
+            {
+                var snappedPos = SnapToGrid(new PointF(camera.X, camera.Y));
+                camera.X = snappedPos.X;
+                camera.Y = snappedPos.Y;
             }
         }
 
@@ -357,6 +371,12 @@ namespace Project9.Editor
                 {
                     _draggedEnemy.X = targetPos.X;
                     _draggedEnemy.Y = targetPos.Y;
+                    Invalidate();
+                }
+                else if (_draggedCamera != null)
+                {
+                    _draggedCamera.X = targetPos.X;
+                    _draggedCamera.Y = targetPos.Y;
                     Invalidate();
                 }
             }
@@ -568,6 +588,22 @@ namespace Project9.Editor
                     }
                 }
                 
+                // Check if clicking on any camera
+                foreach (var camera in _mapData.MapData.Cameras)
+                {
+                    float cameraScreenX = camera.X;
+                    float cameraScreenY = camera.Y;
+                    float distance = (float)Math.Sqrt(Math.Pow(worldPos.X - cameraScreenX, 2) + Math.Pow(worldPos.Y - cameraScreenY, 2));
+                    if (distance < 50) // Click radius
+                    {
+                        _draggedCamera = camera;
+                        _isDragging = true;
+                        _dragOffset = new PointF(worldPos.X - cameraScreenX, worldPos.Y - cameraScreenY);
+                        Invalidate();
+                        return;
+                    }
+                }
+                
                 // If not dragging, handle clicks
                 if (!_isDragging)
                 {
@@ -639,6 +675,7 @@ namespace Project9.Editor
                 _isDragging = false;
                 _isDraggingPlayer = false;
                 _draggedEnemy = null;
+                _draggedCamera = null;
                 Invalidate();
             }
         }
@@ -893,6 +930,13 @@ namespace Project9.Editor
             {
                 // Debug: log if player is null
                 Console.WriteLine("[MapRenderControl] Player is null, not drawing");
+            }
+
+            // Draw cameras
+            for (int i = 0; i < _mapData.MapData.Cameras.Count; i++)
+            {
+                var camera = _mapData.MapData.Cameras[i];
+                DrawCamera(g, camera, camera == _draggedCamera, i);
             }
 
             // Draw 64x32 grid if enabled
@@ -1181,6 +1225,73 @@ namespace Project9.Editor
                 SizeF textSize = g.MeasureString(label, font);
                 
                 // Position label above the player (at the top of the diamond)
+                float labelX = centerX - textSize.Width / 2.0f;
+                float labelY = centerY - halfHeight - textSize.Height - 4; // 4 pixels above the diamond
+                
+                // Draw background rectangle for better visibility
+                RectangleF backgroundRect = new RectangleF(
+                    labelX - 2,
+                    labelY - 1,
+                    textSize.Width + 4,
+                    textSize.Height + 2
+                );
+                g.FillRectangle(backgroundBrush, backgroundRect);
+                
+                // Draw text
+                g.DrawString(label, font, textBrush, labelX, labelY);
+            }
+        }
+
+        private void DrawCamera(Graphics g, CameraData camera, bool isDragging, int index)
+        {
+            float centerX = camera.X;
+            float centerY = camera.Y;
+            
+            // Isometric diamond dimensions (same as enemies/player)
+            float halfWidth = 32.0f;
+            float halfHeight = 16.0f;
+            
+            // Define the 4 points of the isometric diamond
+            PointF[] diamondPoints = new PointF[]
+            {
+                new PointF(centerX, centerY - halfHeight),                    // Top
+                new PointF(centerX + halfWidth, centerY),                     // Right
+                new PointF(centerX, centerY + halfHeight),                    // Bottom
+                new PointF(centerX - halfWidth, centerY)                      // Left
+            };
+            
+            // Draw filled isometric diamond (blue for cameras)
+            using (SolidBrush brush = new SolidBrush(isDragging ? Color.LightBlue : Color.Blue))
+            {
+                g.FillPolygon(brush, diamondPoints);
+            }
+            
+            // Draw outline
+            using (Pen pen = new Pen(Color.White, 2))
+            {
+                g.DrawPolygon(pen, diamondPoints);
+            }
+            
+            // Draw sight cone preview (as a line in the rotation direction)
+            float coneLength = camera.DetectionRange;
+            float coneAngleRad = camera.Rotation;
+            float endX = centerX + (float)Math.Cos(coneAngleRad) * coneLength;
+            float endY = centerY + (float)Math.Sin(coneAngleRad) * coneLength;
+            
+            using (Pen conePen = new Pen(Color.FromArgb(150, Color.Cyan), 3))
+            {
+                g.DrawLine(conePen, centerX, centerY, endX, endY);
+            }
+            
+            // Draw label above the camera
+            string label = $"Camera {index}";
+            using (Font font = new Font("Arial", 10, FontStyle.Bold))
+            using (SolidBrush textBrush = new SolidBrush(Color.White))
+            using (SolidBrush backgroundBrush = new SolidBrush(Color.FromArgb(200, Color.Black)))
+            {
+                SizeF textSize = g.MeasureString(label, font);
+                
+                // Position label above the camera (at the top of the diamond)
                 float labelX = centerX - textSize.Width / 2.0f;
                 float labelY = centerY - halfHeight - textSize.Height - 4; // 4 pixels above the diamond
                 

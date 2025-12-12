@@ -56,6 +56,27 @@ namespace Project9.Shared
     }
 
     /// <summary>
+    /// Represents a security camera position in the map for JSON serialization
+    /// </summary>
+    public class CameraData
+    {
+        [JsonPropertyName("x")]
+        public float X { get; set; }
+
+        [JsonPropertyName("y")]
+        public float Y { get; set; }
+        
+        [JsonPropertyName("rotation")]
+        public float Rotation { get; set; } = 0.0f; // Rotation in radians
+        
+        [JsonPropertyName("detectionRange")]
+        public float DetectionRange { get; set; } = 300.0f; // Detection range in pixels
+        
+        [JsonPropertyName("sightConeAngle")]
+        public float SightConeAngle { get; set; } = 60.0f; // Sight cone angle in degrees
+    }
+
+    /// <summary>
     /// Complete map data structure for JSON serialization
     /// </summary>
     public class MapData
@@ -71,6 +92,9 @@ namespace Project9.Shared
 
         [JsonPropertyName("enemies")]
         public List<EnemyData> Enemies { get; set; } = new List<EnemyData>();
+
+        [JsonPropertyName("cameras")]
+        public List<CameraData> Cameras { get; set; } = new List<CameraData>();
 
         [JsonPropertyName("player")]
         public PlayerData? Player { get; set; }

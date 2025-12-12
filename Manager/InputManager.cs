@@ -49,10 +49,10 @@ namespace Project9
         private Vector2 _clickStartPos;
         private const float DRAG_THRESHOLD = 10.0f;
 
-        private Camera _camera;
+        private ViewportCamera _camera;
         private Func<Vector2, Vector2> _screenToWorld;
 
-        public InputManager(Camera camera, Func<Vector2, Vector2> screenToWorld)
+        public InputManager(ViewportCamera camera, Func<Vector2, Vector2> screenToWorld)
         {
             _camera = camera;
             _screenToWorld = screenToWorld;

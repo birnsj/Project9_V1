@@ -2025,6 +2025,43 @@
       "y": 4976
     }
   ],
+  "cameras": [
+    {
+      "x": 0,
+      "y": 4600,
+      "rotation": 0.0,
+      "detectionRange": 400.0,
+      "sightConeAngle": 35.0
+    },
+    {
+      "x": 300,
+      "y": 4800,
+      "rotation": 2.094,
+      "detectionRange": 350.0,
+      "sightConeAngle": 35.0
+    },
+    {
+      "x": -300,
+      "y": 4700,
+      "rotation": 4.189,
+      "detectionRange": 400.0,
+      "sightConeAngle": 35.0
+    },
+    {
+      "x": 800,
+      "y": 4600,
+      "rotation": 1.047,
+      "detectionRange": 300.0,
+      "sightConeAngle": 35.0
+    },
+    {
+      "x": -800,
+      "y": 4800,
+      "rotation": 5.236,
+      "detectionRange": 350.0,
+      "sightConeAngle": 35.0
+    }
+  ],
   "player": {
     "x": -544,
     "y": 4896
