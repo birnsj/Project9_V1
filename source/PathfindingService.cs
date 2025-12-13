@@ -152,8 +152,9 @@ namespace Project9
             _sharedCameFrom.Clear();
                 
                 // Corner offset for collision checking (check corners to avoid clipping obstacles)
-                float cornerOffsetX = gridCellWidth * 0.4f;
-                float cornerOffsetY = gridCellHeight * 0.4f;
+                // Increased offset to account for entity size and be more forgiving around corners
+                float cornerOffsetX = gridCellWidth * 0.5f;
+                float cornerOffsetY = gridCellHeight * 0.5f;
                 
                 // Convert world coordinates to grid coordinates
                 (int x, int y) startCell = (
@@ -450,11 +451,16 @@ namespace Project9
         
         /// <summary>
         /// Simplify path by removing collinear points (uses pooled list)
+        /// More conservative simplification to keep waypoints around corners
         /// </summary>
         public static List<Vector2>? SimplifyPath(List<Vector2>? path, float threshold = 0.1f)
         {
             if (path == null || path.Count <= 2)
                 return path;
+            
+            // Use a much more conservative threshold to keep more waypoints around corners
+            // This helps with navigation through tight spaces
+            float conservativeThreshold = Math.Max(threshold, 0.05f); // Never simplify too aggressively
             
             List<Vector2> simplified = RentPath(); // Use pooled list
             simplified.Add(path[0]); // Always keep start
@@ -466,13 +472,33 @@ namespace Project9
                 Vector2 next = path[i + 1];
                 
                 // Calculate angle between segments
-                Vector2 dir1 = Vector2.Normalize(current - prev);
-                Vector2 dir2 = Vector2.Normalize(next - current);
+                Vector2 dir1 = current - prev;
+                Vector2 dir2 = next - current;
+                
+                // Check if directions are similar (collinear)
+                float dir1Len = dir1.Length();
+                float dir2Len = dir2.Length();
+                
+                if (dir1Len < 0.01f || dir2Len < 0.01f)
+                {
+                    // Very short segment - always keep to preserve path detail
+                    simplified.Add(current);
+                    continue;
+                }
+                
+                dir1 = Vector2.Normalize(dir1);
+                dir2 = Vector2.Normalize(dir2);
                 
                 float dot = Vector2.Dot(dir1, dir2);
                 
-                // If not moving in roughly same direction, keep this point
-                if (dot < 1.0f - threshold)
+                // Keep point if direction changes significantly (more conservative)
+                // Lower threshold means we keep more waypoints
+                if (dot < 1.0f - conservativeThreshold)
+                {
+                    simplified.Add(current);
+                }
+                // Also keep every Nth waypoint to ensure we have enough nodes around corners
+                else if (i % 2 == 0) // Keep every other waypoint even if collinear
                 {
                     simplified.Add(current);
                 }

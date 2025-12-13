@@ -450,7 +450,7 @@ namespace Project9
                         // Use much less aggressive simplification to keep most waypoints needed for obstacles
                         var originalPath = PathfindingService.RentPath();
                         originalPath.AddRange(_path);
-                        _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                        _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
                         if (_path == null || _path.Count == 0)
                         {
                             _path = originalPath; // Restore if simplification removed everything
@@ -506,7 +506,7 @@ namespace Project9
                     {
                         var originalPath = PathfindingService.RentPath();
                         originalPath.AddRange(_path);
-                        _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                        _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
                         if (_path == null || _path.Count == 0)
                         {
                             _path = originalPath; // Restore if simplification removed everything
@@ -617,7 +617,7 @@ namespace Project9
                     {
                         var originalPath = PathfindingService.RentPath();
                         originalPath.AddRange(_path);
-                        _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                        _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
                         if (_path == null || _path.Count == 0)
                         {
                             _path = originalPath; // Restore if simplification removed everything
@@ -676,9 +676,14 @@ namespace Project9
 
         private bool CheckDirectPath(Vector2 target, Func<Vector2, bool>? checkCollision)
         {
+            return CheckDirectPath(_position, target, checkCollision);
+        }
+        
+        private bool CheckDirectPath(Vector2 from, Vector2 target, Func<Vector2, bool>? checkCollision)
+        {
             if (checkCollision == null) return true;
             
-            Vector2 direction = target - _position;
+            Vector2 direction = target - from;
             float distanceSquared = direction.LengthSquared();
             // Use denser sampling (every 8 pixels) like player to catch more obstacles
             float distance = (float)Math.Sqrt(distanceSquared); // Need actual distance for sampling calculation
@@ -691,7 +696,7 @@ namespace Project9
                 if (t < 0.001f || t > 0.999f)
                     continue;
                     
-                Vector2 samplePoint = _position + (target - _position) * t;
+                Vector2 samplePoint = from + (target - from) * t;
                 if (checkCollision(samplePoint))
                 {
                     return false;
@@ -716,7 +721,57 @@ namespace Project9
                 _path.RemoveAt(0);
             }
             
-            if (_path.Count > 0)
+            // Proactively check if path ahead is blocked before moving
+            if (_path != null && _path.Count > 0 && checkTerrainOnly != null)
+            {
+                // Check next 1-2 waypoints to see if path is clear
+                bool pathAheadBlocked = false;
+                int waypointsToCheck = Math.Min(2, _path.Count);
+                
+                for (int i = 0; i < waypointsToCheck; i++)
+                {
+                    Vector2 waypointToCheck = _path[i];
+                    Vector2 checkFrom = i == 0 ? _position : _path[i - 1];
+                    
+                    // Check if path to this waypoint is clear
+                    Func<Vector2, bool> terrainCheck = checkTerrainOnly;
+                    if (!CheckDirectPath(checkFrom, waypointToCheck, terrainCheck))
+                    {
+                        pathAheadBlocked = true;
+                        break;
+                    }
+                }
+                
+                // If path ahead is blocked, recalculate proactively before getting stuck
+                if (pathAheadBlocked)
+                {
+                    _path = PathfindingService.FindPath(
+                        _position, 
+                        finalTarget, 
+                        checkTerrainOnly,
+                        GameConfig.PathfindingGridCellWidth,
+                        GameConfig.PathfindingGridCellHeight
+                    );
+                    if (_path != null && _path.Count > 0)
+                    {
+                        var originalPath = PathfindingService.RentPath();
+                        originalPath.AddRange(_path);
+                        _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
+                        if (_path == null || _path.Count == 0)
+                        {
+                            _path = originalPath;
+                        }
+                        else
+                        {
+                            PathfindingService.ReturnPath(originalPath);
+                        }
+                    }
+                    // Reset stuck timer since we found an alternative path
+                    _stuckTimer = 0.0f;
+                }
+            }
+            
+            if (_path != null && _path.Count > 0)
             {
                 Vector2 waypoint = _path[0];
                 Vector2 direction = waypoint - _position;
@@ -764,7 +819,7 @@ namespace Project9
                                 {
                                     var originalPath = PathfindingService.RentPath();
                                     originalPath.AddRange(_path);
-                                    _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                    _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
                                     if (_path == null || _path.Count == 0)
                                     {
                                         _path = originalPath;
@@ -799,7 +854,7 @@ namespace Project9
                             {
                                 var originalPath = PathfindingService.RentPath();
                                 originalPath.AddRange(_path);
-                                _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
                                 if (_path == null || _path.Count == 0)
                                 {
                                     _path = originalPath;
@@ -876,7 +931,7 @@ namespace Project9
                             {
                                 var originalPath = PathfindingService.RentPath();
                                 originalPath.AddRange(_path);
-                                _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
                                 if (_path == null || _path.Count == 0)
                                 {
                                     _path = originalPath;
@@ -921,7 +976,7 @@ namespace Project9
                             {
                                 var originalPath = PathfindingService.RentPath();
                                 originalPath.AddRange(_path);
-                                _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
                                 if (_path == null || _path.Count == 0)
                                 {
                                     _path = originalPath;

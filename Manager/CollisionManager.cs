@@ -271,6 +271,48 @@ namespace Project9
         }
         
         /// <summary>
+        /// Check collision with a custom radius (for push-out checks when stuck)
+        /// </summary>
+        private bool CheckCollisionWithRadius(Vector2 position, float radius, bool includeEnemies, Vector2? excludePosition)
+        {
+            // Check collision with enemies if requested
+            if (includeEnemies)
+            {
+                int gridX = (int)(position.X / GameConfig.EnemyGridSize);
+                int gridY = (int)(position.Y / GameConfig.EnemyGridSize);
+                
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        var key = (gridX + dx, gridY + dy);
+                        if (_enemyGrid.TryGetValue(key, out var enemiesInCell))
+                        {
+                            foreach (var enemy in enemiesInCell)
+                            {
+                                if (!enemy.IsAlive)
+                                    continue;
+                                
+                                if (excludePosition.HasValue && Vector2.DistanceSquared(enemy.Position, excludePosition.Value) < 1.0f)
+                                    continue;
+                                
+                                float distanceSquared = Vector2.DistanceSquared(position, enemy.Position);
+                                float combinedRadius = radius * 2;
+                                float combinedRadiusSquared = combinedRadius * combinedRadius;
+                                
+                                if (distanceSquared < combinedRadiusSquared)
+                                    return true;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check static terrain collision
+            return CheckTerrainCollisionInternal(position, radius);
+        }
+        
+        /// <summary>
         /// Check terrain collision with caching for static positions
         /// </summary>
         private bool CheckTerrainCollision(Vector2 position, float radius)
@@ -371,7 +413,10 @@ namespace Project9
                             Vector2 toCell = cellPos - position;
                             float distance = toCell.Length();
                             
-                            if (distance < closestDistance && distance > 0.01f)
+                            // Use a slightly larger radius for normal calculation to be more forgiving
+                            // This helps with smoother sliding around corners
+                            float checkRadius = radius * 1.2f;
+                            if (distance < checkRadius && distance > 0.01f && distance < closestDistance)
                             {
                                 closestDistance = distance;
                                 // Normal points away from collision
@@ -508,11 +553,14 @@ namespace Project9
         /// Move with collision resolution - returns final position after sliding
         /// This is the main method entities should use for smooth movement
         /// </summary>
-        public Vector2 MoveWithCollision(Vector2 fromPos, Vector2 toPos, bool includeEnemies = true, int maxIterations = 3, Vector2? excludePosition = null)
+        public Vector2 MoveWithCollision(Vector2 fromPos, Vector2 toPos, bool includeEnemies = true, int maxIterations = 5, Vector2? excludePosition = null)
         {
             Vector2 currentPos = fromPos;
             Vector2 remainingMovement = toPos - fromPos;
-            float effectiveRadius = GameConfig.EntityCollisionRadius + GameConfig.CollisionBuffer;
+            // Use a much smaller effective radius for movement to be very forgiving
+            // This allows entities to get much closer to walls during movement and through openings
+            // We use a minimal buffer for movement to prevent getting stuck on corners
+            float effectiveRadius = GameConfig.EntityCollisionRadius + GameConfig.CollisionBuffer * 0.3f;
             
             for (int iteration = 0; iteration < maxIterations; iteration++)
             {
@@ -522,13 +570,32 @@ namespace Project9
                 Vector2 targetPos = currentPos + remainingMovement;
                 
                 // Check if we can move directly
-                if (!CheckCollision(targetPos, includeEnemies, excludePosition))
+                // Use a slightly smaller radius for the direct check to allow smoother entry into slides
+                if (!CheckCollisionWithRadius(targetPos, effectiveRadius * 0.95f, includeEnemies, excludePosition))
                 {
                     return targetPos;
                 }
                 
                 // Swept collision to find where we hit
                 Vector2 hitPos = SweptCollisionCheck(currentPos, targetPos, includeEnemies, excludePosition);
+                
+                // Ensure we actually moved some distance before attempting slide
+                // This prevents getting stuck when hitPos is the same as currentPos
+                if (Vector2.DistanceSquared(currentPos, hitPos) < 0.01f)
+                {
+                    // Try a very small step in the movement direction to initiate sliding
+                    Vector2 initDir = remainingMovement;
+                    if (initDir.LengthSquared() > 0.01f)
+                    {
+                        initDir.Normalize();
+                        Vector2 smallStep = currentPos + initDir * 1.0f;
+                        if (!CheckCollisionWithRadius(smallStep, effectiveRadius * 0.9f, includeEnemies, excludePosition))
+                        {
+                            currentPos = smallStep;
+                            continue; // Continue with sliding logic
+                        }
+                    }
+                }
                 
                 // If we didn't move at all, try to get unstuck
                 if (Vector2.DistanceSquared(currentPos, hitPos) < 0.1f)
@@ -537,11 +604,65 @@ namespace Project9
                     Vector2 pushNormal = GetCollisionNormal(currentPos, effectiveRadius);
                     if (pushNormal.LengthSquared() > 0.01f)
                     {
-                        // Push out slightly
-                        Vector2 pushOut = currentPos + pushNormal * 2.0f;
-                        if (!CheckCollision(pushOut, includeEnemies, excludePosition))
+                        // Try pushing out in multiple directions to escape corners
+                        // Use larger push distances to be more aggressive about escaping
+                        float[] pushDistances = { 6.0f, 12.0f, 18.0f, 24.0f };
+                        bool pushedOut = false;
+                        
+                        foreach (float pushDist in pushDistances)
                         {
-                            currentPos = pushOut;
+                            Vector2 pushOut = currentPos + pushNormal * pushDist;
+                            // Use a smaller radius for the push-out check to allow escaping
+                            if (!CheckCollisionWithRadius(pushOut, effectiveRadius * 0.8f, includeEnemies, excludePosition))
+                            {
+                                currentPos = pushOut;
+                                pushedOut = true;
+                                break;
+                            }
+                        }
+                        
+                        // If normal push didn't work, try perpendicular directions (for corners)
+                        if (!pushedOut)
+                        {
+                            Vector2 perp1 = new Vector2(-pushNormal.Y, pushNormal.X);
+                            Vector2 perp2 = new Vector2(pushNormal.Y, -pushNormal.X);
+                            
+                            foreach (var perpDir in new[] { perp1, perp2 })
+                            {
+                                foreach (float pushDist in pushDistances)
+                                {
+                                    Vector2 pushOut = currentPos + perpDir * pushDist;
+                                    // Use a smaller radius for the push-out check to allow escaping
+                                    if (!CheckCollisionWithRadius(pushOut, effectiveRadius * 0.8f, includeEnemies, excludePosition))
+                                    {
+                                        currentPos = pushOut;
+                                        pushedOut = true;
+                                        break;
+                                    }
+                                }
+                                if (pushedOut) break;
+                            }
+                        }
+                        
+                        // Last resort: try moving slightly in the original movement direction
+                        if (!pushedOut && remainingMovement.LengthSquared() > 0.01f)
+                        {
+                            Vector2 originalMoveDir = remainingMovement;
+                            originalMoveDir.Normalize();
+                            foreach (float pushDist in new[] { 8.0f, 16.0f })
+                            {
+                                Vector2 pushOut = currentPos + originalMoveDir * pushDist;
+                                if (!CheckCollisionWithRadius(pushOut, effectiveRadius * 0.8f, includeEnemies, excludePosition))
+                                {
+                                    currentPos = pushOut;
+                                    pushedOut = true;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (pushedOut)
+                        {
                             continue;
                         }
                     }
@@ -564,20 +685,45 @@ namespace Project9
                     break;
                 }
                 
+                // Ensure normal is normalized for smooth sliding
+                normal.Normalize();
+                
                 // Project remaining movement onto the surface (perpendicular to normal)
                 // This creates smooth sliding along walls
                 float dotProduct = Vector2.Dot(remainingMovement, normal);
                 Vector2 slideMovement = remainingMovement - normal * dotProduct;
                 
-                // Reduce slide movement slightly to prevent getting stuck in corners
-                slideMovement *= 0.95f;
+                // Check if we can actually slide - if slide movement is too small, try pushing out first
+                // This prevents getting stuck when entering a slide
+                if (slideMovement.LengthSquared() < 0.1f)
+                {
+                    // Slide movement is very small - try a small push away from wall first
+                    Vector2 pushAway = currentPos + normal * 2.0f;
+                    if (!CheckCollisionWithRadius(pushAway, effectiveRadius * 0.9f, includeEnemies, excludePosition))
+                    {
+                        currentPos = pushAway;
+                        // Recalculate remaining movement from new position
+                        Vector2 newTarget = fromPos + (toPos - fromPos);
+                        remainingMovement = newTarget - currentPos;
+                        continue;
+                    }
+                }
                 
-                // Update remaining movement for next iteration
+                // Always use full slide movement for smooth sliding
+                // This creates very smooth movement along walls
                 remainingMovement = slideMovement;
                 
-                // If slide movement is too small, stop
-                if (slideMovement.LengthSquared() < 0.1f)
+                // Only stop if slide movement is extremely small (more forgiving)
+                if (slideMovement.LengthSquared() < 0.001f)
                     break;
+                
+                // Boost sliding movement to help escape corners and maintain momentum
+                float slideLen = slideMovement.Length();
+                if (slideLen > 0.001f && slideLen < 3.0f)
+                {
+                    // Normalize and boost small movements to maintain smooth sliding
+                    remainingMovement = Vector2.Normalize(slideMovement) * Math.Max(slideLen, 3.0f);
+                }
             }
             
             return currentPos;
@@ -643,20 +789,27 @@ namespace Project9
                     break;
                 }
                 
+                // Ensure normal is normalized for smooth sliding
+                normal.Normalize();
+                
                 // Project remaining movement onto the surface (perpendicular to normal)
                 // This creates smooth sliding along walls
                 float dotProduct = Vector2.Dot(remainingMovement, normal);
                 Vector2 slideMovement = remainingMovement - normal * dotProduct;
                 
-                // Reduce slide movement slightly to prevent getting stuck in corners
-                slideMovement *= 0.95f;
-                
-                // Update remaining movement for next iteration
+                // Always use full slide movement for smooth sliding
+                // This creates very smooth movement along walls
                 remainingMovement = slideMovement;
                 
-                // If slide movement is too small, stop
-                if (slideMovement.LengthSquared() < 0.1f)
+                // Only stop if slide movement is extremely small (more forgiving)
+                if (slideMovement.LengthSquared() < 0.001f)
                     break;
+                
+                // Add slight boost to sliding to help escape corners
+                if (remainingMovement.LengthSquared() < 1.0f && remainingMovement.LengthSquared() > 0.001f)
+                {
+                    remainingMovement = Vector2.Normalize(remainingMovement) * Math.Max(remainingMovement.Length(), 2.0f);
+                }
             }
             
             return currentPos;

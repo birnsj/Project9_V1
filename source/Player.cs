@@ -23,6 +23,9 @@ namespace Project9
         // Respawn system
         private Vector2 _spawnPosition;
         private float _respawnTimer = 0.0f;
+        
+        // Path checking throttling
+        private float _lastPathCheckTime = 0.0f;
 
         public bool IsSneaking => _isSneaking;
         public bool IsDead => _isDead;
@@ -253,7 +256,7 @@ namespace Project9
                         // But don't simplify too aggressively - we need waypoints to avoid obstacles
                         // Use much larger threshold to preserve most waypoints for navigation around obstacles
                         List<Vector2> originalPath = new List<Vector2>(_path);
-                        _path = PathfindingService.SimplifyPath(_path, 0.4f); // Much larger threshold to keep most waypoints
+                        _path = PathfindingService.SimplifyPath(_path, 0.2f); // Reduced threshold to keep more waypoints around corners
                         
                         if (_path != null && _path.Count > 0)
                         {
@@ -415,20 +418,80 @@ namespace Project9
                     
                     if (_path.Count > 0)
                     {
-                        moveTarget = _path[0];
-                        // Ensure we have a valid target - if path waypoint is too close, use next one or target
-                        float distToWaypoint = Vector2.Distance(_position, _path[0]);
-                        if (distToWaypoint < GameConfig.WaypointReachThreshold && _path.Count > 1)
+                        // Proactively check if path ahead is blocked before moving
+                        // Throttle this check to avoid spamming recalculations
+                        float currentTime = (float)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency;
+                        const float PATH_CHECK_INTERVAL = 0.3f; // Only check every 0.3 seconds
+                        
+                        bool pathAheadBlocked = false;
+                        if (checkCollision != null && (currentTime - _lastPathCheckTime) >= PATH_CHECK_INTERVAL)
                         {
-                            // Skip to next waypoint if current one is too close
-                            _path.RemoveAt(0);
-                            moveTarget = _path[0];
+                            _lastPathCheckTime = currentTime;
+                            
+                            // Check next 1-2 waypoints to see if path is clear
+                            int waypointsToCheck = Math.Min(2, _path.Count);
+                            for (int i = 0; i < waypointsToCheck; i++)
+                            {
+                                Vector2 waypointToCheck = _path[i];
+                                Vector2 checkFrom = i == 0 ? _position : _path[i - 1];
+                                
+                                // Check if path to this waypoint is clear
+                                if (!CheckDirectPath(checkFrom, waypointToCheck, checkCollision))
+                                {
+                                    pathAheadBlocked = true;
+                                    break;
+                                }
+                            }
+                            
+                            // If path ahead is blocked, recalculate proactively before getting stuck
+                            if (pathAheadBlocked && _targetPosition.HasValue)
+                            {
+                                Func<Vector2, bool> pathfindingCheck = checkCollision ?? ((pos) => false);
+                                _path = PathfindingService.FindPath(
+                                    _position,
+                                    _targetPosition.Value,
+                                    pathfindingCheck,
+                                    GameConfig.PathfindingGridCellWidth,
+                                    GameConfig.PathfindingGridCellHeight
+                                );
+                                if (_path != null && _path.Count > 0)
+                                {
+                                    _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                                    if (_path == null || _path.Count == 0)
+                                    {
+                                        _path = null;
+                                    }
+                                }
+                                else
+                                {
+                                    _path = null;
+                                }
+                                // Reset stuck timer since we found an alternative path
+                                _stuckTimer = 0.0f;
+                            }
                         }
-                        else if (distToWaypoint < GameConfig.WaypointReachThreshold && _path.Count == 1)
+                        
+                        if (_path != null && _path.Count > 0)
                         {
-                            // Last waypoint is too close, go directly to target
-                            LogOverlay.Log($"[Player] Clearing path - last waypoint too close ({distToWaypoint:F1}px), going to target", LogLevel.Info);
-                            _path.Clear();
+                            moveTarget = _path[0];
+                            // Ensure we have a valid target - if path waypoint is too close, use next one or target
+                            float distToWaypoint = Vector2.Distance(_position, _path[0]);
+                            if (distToWaypoint < GameConfig.WaypointReachThreshold && _path.Count > 1)
+                            {
+                                // Skip to next waypoint if current one is too close
+                                _path.RemoveAt(0);
+                                moveTarget = _path[0];
+                            }
+                            else if (distToWaypoint < GameConfig.WaypointReachThreshold && _path.Count == 1)
+                            {
+                                // Last waypoint is too close, go directly to target
+                                LogOverlay.Log($"[Player] Clearing path - last waypoint too close ({distToWaypoint:F1}px), going to target", LogLevel.Info);
+                                _path.Clear();
+                                moveTarget = _targetPosition.Value;
+                            }
+                        }
+                        else
+                        {
                             moveTarget = _targetPosition.Value;
                         }
                     }
@@ -697,6 +760,35 @@ namespace Project9
             }
         }
 
+        /// <summary>
+        /// Check if there's a direct path between two points (no obstacles)
+        /// </summary>
+        private bool CheckDirectPath(Vector2 from, Vector2 target, Func<Vector2, bool>? checkCollision)
+        {
+            if (checkCollision == null) return true;
+            
+            Vector2 direction = target - from;
+            float distanceSquared = direction.LengthSquared();
+            // Use denser sampling (every 8 pixels) to catch more obstacles
+            float distance = (float)Math.Sqrt(distanceSquared);
+            int samples = Math.Max(3, (int)(distance / 8.0f) + 1);
+            
+            for (int i = 0; i <= samples; i++)
+            {
+                float t = (float)i / samples;
+                // Skip exact start and end to avoid checking current position
+                if (t < 0.001f || t > 0.999f)
+                    continue;
+                    
+                Vector2 samplePoint = from + (target - from) * t;
+                if (checkCollision(samplePoint))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        
         private Vector2 TrySlideAlongCollision(Vector2 currentPos, Vector2 targetPos, Vector2 direction, float moveDistance, Func<Vector2, bool>? checkCollision)
         {
             if (checkCollision == null) return currentPos;

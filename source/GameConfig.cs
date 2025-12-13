@@ -73,7 +73,7 @@ namespace Project9
         public const float EntityCollisionRadius = 22.0f;
         
         /// <summary>Collision buffer to keep entities away from walls (pixels)</summary>
-        public const float CollisionBuffer = 6.0f;
+        public const float CollisionBuffer = 12.0f; // Increased to be more forgiving around corners
         
         /// <summary>Enemy search duration when player goes out of view (seconds)</summary>
         public const float EnemySearchDuration = 5.0f;
