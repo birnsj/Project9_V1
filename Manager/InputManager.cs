@@ -141,7 +141,7 @@ namespace Project9
                                !_isDragging &&
                                Vector2.Distance(mouseWorldPos, _clickStartPos) > DRAG_THRESHOLD * 0.5f; // Mouse moved = new click intent
             
-            // Left mouse button clicked (new click or rapid click)
+            // Left mouse button clicked (new click or rapid click) - ALWAYS MOVES
             if (isNewClick || isRapidClick)
             {
                 // Ignore clicks on UI elements
@@ -157,20 +157,62 @@ namespace Project9
                     _isDragging = false;
                     _clickStartPos = mouseWorldPos;
                     
-                    // Check for enemy attack
-                    Enemy? targetEnemy = FindAttackableEnemy(mouseWorldPos, player, enemies);
+                    // Diablo 2 style: Click on enemy = attack if in range, otherwise move to enemy
+                    // Click on ground = always move
+                    Enemy? targetEnemy = null;
+                    float closestEnemyDistance = float.MaxValue;
+                    const float clickRadius = 40.0f; // Click detection radius for enemies
+                    
+                    // Check if click is on or near an enemy
+                    foreach (var enemy in enemies)
+                    {
+                        if (!enemy.IsAlive || enemy.IsFlashing)
+                            continue;
+                        
+                        float clickDistanceToEnemy = Vector2.Distance(mouseWorldPos, enemy.Position);
+                        
+                        // If click is near enemy (within click radius)
+                        if (clickDistanceToEnemy <= clickRadius)
+                        {
+                            if (clickDistanceToEnemy < closestEnemyDistance)
+                            {
+                                targetEnemy = enemy;
+                                closestEnemyDistance = clickDistanceToEnemy;
+                            }
+                        }
+                    }
                     
                     if (targetEnemy != null)
                     {
-                        inputEvent = new InputEvent 
-                        { 
-                            Action = InputAction.Attack,
-                            TargetEnemy = targetEnemy,
-                            WorldPosition = mouseWorldPos
-                        };
+                        // Clicked on/near an enemy - check attack range using collision manager
+                        // Note: We need to get collision manager from somewhere - for now use distance check
+                        // The EntityManager will handle the actual attack range check
+                        float playerDistanceToEnemy = Vector2.Distance(player.Position, targetEnemy.Position);
+                        const float playerAttackRange = 80.0f;
+                        
+                        if (playerDistanceToEnemy <= playerAttackRange)
+                        {
+                            // In attack range - attack
+                            inputEvent = new InputEvent 
+                            { 
+                                Action = InputAction.Attack,
+                                TargetEnemy = targetEnemy,
+                                WorldPosition = targetEnemy.Position
+                            };
+                        }
+                        else
+                        {
+                            // Not in range - move to enemy
+                            inputEvent = new InputEvent 
+                            { 
+                                Action = InputAction.MoveTo,
+                                WorldPosition = targetEnemy.Position
+                            };
+                        }
                     }
                     else
                     {
+                        // Clicked on ground - always move
                         inputEvent = new InputEvent 
                         { 
                             Action = InputAction.MoveTo,

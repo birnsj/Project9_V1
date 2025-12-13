@@ -43,6 +43,9 @@ namespace Project9
         protected float _flashTime;
 
         public bool IsFlashing => _isFlashing;
+        public float CurrentHealth => _currentHealth;
+        public float MaxHealth => _maxHealth;
+        public bool IsAlive => _currentHealth > 0f;
 
         // ===== RENDERING =====
         protected Texture2D? _diamondTexture;
@@ -65,13 +68,24 @@ namespace Project9
         }
 
         /// <summary>
-        /// Take a hit - damage and start flashing
+        /// Take damage - reduces health and starts flashing
         /// </summary>
-        public virtual void TakeHit()
+        public virtual void TakeDamage(float damage)
         {
+            if (damage <= 0f) return;
+            
+            _currentHealth = Math.Max(0f, _currentHealth - damage);
             _isFlashing = true;
             _flashTimer = _flashDuration;
             _flashTime = 0f;
+        }
+
+        /// <summary>
+        /// Take a hit - damage and start flashing (legacy method, calls TakeDamage)
+        /// </summary>
+        public virtual void TakeHit()
+        {
+            TakeDamage(10f); // Default damage if not specified
         }
 
         /// <summary>

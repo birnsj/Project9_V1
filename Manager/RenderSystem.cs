@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Myra.Graphics2D.UI;
@@ -19,16 +20,22 @@ namespace Project9
         private bool _showGrid64x32 = false;
         private bool _showCollision = true;
         private bool _showCollisionSpheres = true; // Show collision spheres for entities
-        private bool _showPath = true; // Show path debug visualization
+        private bool _showPath = false; // Show path debug visualization
         private Texture2D? _gridLineTexture;
         private Texture2D? _collisionDiamondTexture;
         private Texture2D? _clickEffectTexture;
         private Texture2D? _pathLineTexture;
+        private Texture2D? _healthBarBackgroundTexture;
+        private Texture2D? _healthBarForegroundTexture;
+        private Texture2D? _bloodSplatTexture;
         
         // Click effect
         private Vector2? _clickEffectPosition;
         private float _clickEffectTimer = 0.0f;
         private const float CLICK_EFFECT_DURATION = 0.5f;
+        
+        // Damage numbers
+        private List<DamageNumber> _damageNumbers = new List<DamageNumber>();
         
         // Performance tracking
         private int _lastDrawCallCount = 0;
@@ -92,6 +99,29 @@ namespace Project9
                 }
             }
         }
+        
+        /// <summary>
+        /// Add a damage number to display
+        /// </summary>
+        public void ShowDamageNumber(Vector2 worldPosition, float damage)
+        {
+            _damageNumbers.Add(new DamageNumber(worldPosition, damage));
+        }
+        
+        /// <summary>
+        /// Update all damage numbers
+        /// </summary>
+        public void UpdateDamageNumbers(float deltaTime)
+        {
+            for (int i = _damageNumbers.Count - 1; i >= 0; i--)
+            {
+                _damageNumbers[i].Update(deltaTime);
+                if (_damageNumbers[i].IsExpired)
+                {
+                    _damageNumbers.RemoveAt(i);
+                }
+            }
+        }
 
         /// <summary>
         /// Render everything
@@ -134,34 +164,78 @@ namespace Project9
             // Draw enemies
             foreach (var enemy in entityManager.Enemies)
             {
-                float effectiveRange = enemy.HasDetectedPlayer 
-                    ? enemy.DetectionRange 
-                    : (entityManager.Player.IsSneaking ? enemy.DetectionRange * 0.5f : enemy.DetectionRange);
-                    
-                enemy.DrawAggroRadius(_spriteBatch, effectiveRange);
-                enemy.DrawSightCone(_spriteBatch);
-                
-                // Draw collision sphere if enabled
-                if (_showCollisionSpheres)
+                // Draw blood splat under dead enemies first (so it appears below)
+                if (enemy.IsDead)
                 {
-                    enemy.DrawCollisionSphere(_spriteBatch);
+                    DrawBloodSplat(_spriteBatch, enemy.Position);
                 }
                 
+                // Skip drawing aggro/sight cone for dead enemies
+                if (!enemy.IsAlive && !enemy.IsDead)
+                    continue;
+                
+                if (!enemy.IsDead)
+                {
+                    float effectiveRange = enemy.HasDetectedPlayer 
+                        ? enemy.DetectionRange 
+                        : (entityManager.Player.IsSneaking ? enemy.DetectionRange * 0.5f : enemy.DetectionRange);
+                        
+                    enemy.DrawAggroRadius(_spriteBatch, effectiveRange);
+                    enemy.DrawSightCone(_spriteBatch);
+                    
+                    // Draw collision sphere if enabled
+                    if (_showCollisionSpheres)
+                    {
+                        enemy.DrawCollisionSphere(_spriteBatch);
+                    }
+                    
+                    // Draw direction indicator
+                    enemy.DrawDirectionIndicator(_spriteBatch, enemy.Rotation);
+                }
+                
+                // Always draw enemy sprite (alive or dead with pulse)
                 enemy.Draw(_spriteBatch);
-                // Draw direction indicator
-                enemy.DrawDirectionIndicator(_spriteBatch, enemy.Rotation);
-                _lastDrawCallCount += _showCollisionSpheres ? 5 : 4; // Aggro, sight cone, collision sphere (optional), sprite, direction
+                
+                // Draw health bar above enemy (only if alive and player is within detection range)
+                if (enemy.IsAlive)
+                {
+                    float distanceToPlayer = Vector2.Distance(entityManager.Player.Position, enemy.Position);
+                    float effectiveDetectionRange = enemy.HasDetectedPlayer 
+                        ? enemy.DetectionRange 
+                        : (entityManager.Player.IsSneaking ? enemy.DetectionRange * GameConfig.EnemySneakDetectionMultiplier : enemy.DetectionRange);
+                    
+                    // Only show health bar if player is within detection range
+                    if (distanceToPlayer <= effectiveDetectionRange)
+                    {
+                        DrawEnemyHealthBar(_spriteBatch, enemy);
+                    }
+                }
+                
+                int drawCount = enemy.IsDead ? 2 : (_showCollisionSpheres ? 6 : 5); // Blood splat + sprite for dead, full set for alive
+                _lastDrawCallCount += drawCount;
             }
 
+            // Draw blood splat under dead player first (so it appears below)
+            if (entityManager.Player.IsDead)
+            {
+                DrawBloodSplat(_spriteBatch, entityManager.Player.Position);
+            }
+            
             // Draw player
-            if (_showCollisionSpheres)
+            if (!entityManager.Player.IsDead && _showCollisionSpheres)
             {
                 entityManager.Player.DrawCollisionSphere(_spriteBatch);
             }
             entityManager.Player.Draw(_spriteBatch);
-            // Draw direction indicator
-            entityManager.Player.DrawDirectionIndicator(_spriteBatch, entityManager.Player.Rotation);
-            _lastDrawCallCount += _showCollisionSpheres ? 3 : 2; // Collision sphere (optional), sprite, direction
+            
+            // Draw direction indicator (only if alive)
+            if (!entityManager.Player.IsDead)
+            {
+                entityManager.Player.DrawDirectionIndicator(_spriteBatch, entityManager.Player.Rotation);
+            }
+            
+            int playerDrawCount = entityManager.Player.IsDead ? 2 : (_showCollisionSpheres ? 3 : 2); // Blood splat + sprite for dead, full set for alive
+            _lastDrawCallCount += playerDrawCount;
             
             // Draw debug path for player (only if not dragging/following cursor and path debug is enabled)
             if (_showPath && !entityManager.IsFollowingCursor)
@@ -176,12 +250,27 @@ namespace Project9
                 _lastDrawCallCount++;
             }
 
+            // Draw damage numbers in world space (before ending world space rendering)
+            DrawDamageNumbersWorldSpace(_spriteBatch);
+
             _spriteBatch.End();
 
             // Screen space rendering (UI)
             if (_uiFont != null)
             {
                 _spriteBatch.Begin();
+
+                // Health bar in lower left corner (only if alive)
+                if (entityManager.Player.IsAlive)
+                {
+                    DrawHealthBar(_spriteBatch, entityManager.Player);
+                }
+
+                // Death screen (if player is dead)
+                if (entityManager.Player.IsDead)
+                {
+                    DrawDeathScreen(_spriteBatch, entityManager.Player);
+                }
 
                 // Version number
                 string versionText = "V002";
@@ -193,7 +282,7 @@ namespace Project9
                 _spriteBatch.DrawString(_uiFont, versionText, position, Color.White);
 
                 // Sneak indicator
-                if (entityManager.Player.IsSneaking)
+                if (entityManager.Player.IsSneaking && entityManager.Player.IsAlive)
                 {
                     string sneakText = "SNEAK";
                     Vector2 sneakTextSize = _uiFont.MeasureString(sneakText);
@@ -567,6 +656,407 @@ namespace Project9
                 SpriteEffects.None,
                 0f
             );
+        }
+
+        private void DrawHealthBar(SpriteBatch spriteBatch, Player player)
+        {
+            const int barWidth = 200;
+            const int barHeight = 20;
+            const int padding = 10;
+            const int borderThickness = 2;
+            
+            // Position in lower left corner
+            Vector2 barPosition = new Vector2(
+                padding,
+                _graphicsDevice.Viewport.Height - barHeight - padding
+            );
+            
+            // Create textures if needed
+            if (_healthBarBackgroundTexture == null)
+            {
+                _healthBarBackgroundTexture = new Texture2D(_graphicsDevice, barWidth, barHeight);
+                Color[] bgData = new Color[barWidth * barHeight];
+                for (int i = 0; i < bgData.Length; i++)
+                {
+                    bgData[i] = new Color(40, 40, 40, 230); // Dark gray background
+                }
+                _healthBarBackgroundTexture.SetData(bgData);
+            }
+            
+            if (_healthBarForegroundTexture == null)
+            {
+                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _healthBarForegroundTexture.SetData(new[] { Color.White });
+            }
+            
+            // Draw background
+            spriteBatch.Draw(_healthBarBackgroundTexture, barPosition, Color.White);
+            
+            // Calculate health percentage
+            float healthPercent = player.MaxHealth > 0 ? player.CurrentHealth / player.MaxHealth : 0f;
+            healthPercent = MathHelper.Clamp(healthPercent, 0f, 1f);
+            
+            // Determine health bar color based on health percentage
+            Color healthColor;
+            if (healthPercent > 0.6f)
+            {
+                // Green when above 60%
+                healthColor = Color.Green;
+            }
+            else if (healthPercent > 0.3f)
+            {
+                // Yellow when between 30% and 60%
+                healthColor = Color.Yellow;
+            }
+            else
+            {
+                // Red when below 30%
+                healthColor = Color.Red;
+            }
+            
+            // Draw health bar foreground
+            int healthBarWidth = (int)((barWidth - borderThickness * 2) * healthPercent);
+            if (healthBarWidth > 0)
+            {
+                Rectangle healthRect = new Rectangle(
+                    (int)barPosition.X + borderThickness,
+                    (int)barPosition.Y + borderThickness,
+                    healthBarWidth,
+                    barHeight - borderThickness * 2
+                );
+                spriteBatch.Draw(_healthBarForegroundTexture, healthRect, healthColor);
+            }
+            
+            // Draw border
+            Rectangle borderRect = new Rectangle(
+                (int)barPosition.X,
+                (int)barPosition.Y,
+                barWidth,
+                barHeight
+            );
+            DrawRectangleOutline(spriteBatch, borderRect, Color.White, borderThickness);
+            
+            // Draw health text (above the bar)
+            if (_uiFont != null)
+            {
+                string healthText = $"HP: {player.CurrentHealth:F0}/{player.MaxHealth:F0}";
+                Vector2 textSize = _uiFont.MeasureString(healthText);
+                Vector2 textPosition = new Vector2(
+                    barPosition.X + (barWidth - textSize.X) / 2.0f,
+                    barPosition.Y - textSize.Y - 5
+                );
+                spriteBatch.DrawString(_uiFont, healthText, textPosition, Color.White);
+            }
+        }
+        
+        private void DrawRectangleOutline(SpriteBatch spriteBatch, Rectangle rect, Color color, int thickness)
+        {
+            if (_healthBarForegroundTexture == null)
+            {
+                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _healthBarForegroundTexture.SetData(new[] { Color.White });
+            }
+            
+            // Top
+            spriteBatch.Draw(_healthBarForegroundTexture, 
+                new Rectangle(rect.X, rect.Y, rect.Width, thickness), color);
+            
+            // Bottom
+            spriteBatch.Draw(_healthBarForegroundTexture, 
+                new Rectangle(rect.X, rect.Y + rect.Height - thickness, rect.Width, thickness), color);
+            
+            // Left
+            spriteBatch.Draw(_healthBarForegroundTexture, 
+                new Rectangle(rect.X, rect.Y, thickness, rect.Height), color);
+            
+            // Right
+            spriteBatch.Draw(_healthBarForegroundTexture, 
+                new Rectangle(rect.X + rect.Width - thickness, rect.Y, thickness, rect.Height), color);
+        }
+        
+        private void DrawEnemyHealthBar(SpriteBatch spriteBatch, Enemy enemy)
+        {
+            const float barWidth = 60.0f;
+            const float barHeight = 6.0f;
+            const float borderThickness = 1.0f;
+            const float barOffsetY = -40.0f; // Position above enemy (in world space)
+            
+            // Position health bar above enemy in world space (so it moves with the enemy)
+            Vector2 barPosition = new Vector2(
+                enemy.Position.X - barWidth / 2.0f,
+                enemy.Position.Y + barOffsetY
+            );
+            
+            // Create textures if needed
+            if (_healthBarForegroundTexture == null)
+            {
+                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _healthBarForegroundTexture.SetData(new[] { Color.White });
+            }
+            
+            // Draw background (dark red)
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                barPosition,
+                null,
+                new Color(60, 0, 0, 200),
+                0f,
+                Vector2.Zero,
+                new Vector2(barWidth, barHeight),
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Calculate health percentage
+            float healthPercent = enemy.MaxHealth > 0 ? enemy.CurrentHealth / enemy.MaxHealth : 0f;
+            healthPercent = MathHelper.Clamp(healthPercent, 0f, 1f);
+            
+            // Draw health bar (red)
+            float healthBarWidth = (barWidth - borderThickness * 2) * healthPercent;
+            if (healthBarWidth > 0)
+            {
+                Color healthColor = new Color(200, 0, 0, 255); // Red
+                Vector2 healthPos = barPosition + new Vector2(borderThickness, borderThickness);
+                spriteBatch.Draw(
+                    _healthBarForegroundTexture,
+                    healthPos,
+                    null,
+                    healthColor,
+                    0f,
+                    Vector2.Zero,
+                    new Vector2(healthBarWidth, barHeight - borderThickness * 2),
+                    SpriteEffects.None,
+                    0f
+                );
+            }
+            
+            // Draw border (4 lines)
+            float borderAlpha = 0.8f;
+            byte alphaByte = (byte)(255 * borderAlpha);
+            Color semiWhite = new Color((byte)255, (byte)255, (byte)255, alphaByte);
+            
+            // Top
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                barPosition,
+                null,
+                semiWhite,
+                0f,
+                Vector2.Zero,
+                new Vector2(barWidth, borderThickness),
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Bottom
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                barPosition + new Vector2(0, barHeight - borderThickness),
+                null,
+                semiWhite,
+                0f,
+                Vector2.Zero,
+                new Vector2(barWidth, borderThickness),
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Left
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                barPosition,
+                null,
+                semiWhite,
+                0f,
+                Vector2.Zero,
+                new Vector2(borderThickness, barHeight),
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Right
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                barPosition + new Vector2(barWidth - borderThickness, 0),
+                null,
+                semiWhite,
+                0f,
+                Vector2.Zero,
+                new Vector2(borderThickness, barHeight),
+                SpriteEffects.None,
+                0f
+            );
+        }
+        
+        private void DrawDeathScreen(SpriteBatch spriteBatch, Player player)
+        {
+            if (_uiFont == null)
+                return;
+            
+            // Draw semi-transparent overlay
+            if (_healthBarForegroundTexture == null)
+            {
+                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _healthBarForegroundTexture.SetData(new[] { Color.White });
+            }
+            
+            Rectangle overlayRect = new Rectangle(0, 0, _graphicsDevice.Viewport.Width, _graphicsDevice.Viewport.Height);
+            spriteBatch.Draw(_healthBarForegroundTexture, overlayRect, new Color(0, 0, 0, 180)); // Dark overlay
+            
+            // "You are Dead" text
+            string deathText = "You are Dead";
+            Vector2 deathTextSize = _uiFont.MeasureString(deathText);
+            Vector2 deathTextPos = new Vector2(
+                _graphicsDevice.Viewport.Width / 2.0f - deathTextSize.X / 2.0f,
+                _graphicsDevice.Viewport.Height / 2.0f - 80.0f
+            );
+            spriteBatch.DrawString(_uiFont, deathText, deathTextPos, Color.Red);
+            
+            // Countdown text
+            int countdownSeconds = (int)Math.Ceiling(player.RespawnTimer);
+            if (countdownSeconds < 0) countdownSeconds = 0;
+            string countdownText = $"Respawning in {countdownSeconds}...";
+            Vector2 countdownTextSize = _uiFont.MeasureString(countdownText);
+            Vector2 countdownTextPos = new Vector2(
+                _graphicsDevice.Viewport.Width / 2.0f - countdownTextSize.X / 2.0f,
+                _graphicsDevice.Viewport.Height / 2.0f - 20.0f
+            );
+            spriteBatch.DrawString(_uiFont, countdownText, countdownTextPos, Color.White            );
+        }
+        
+        private void DrawDamageNumbersWorldSpace(SpriteBatch spriteBatch)
+        {
+            if (_uiFont == null)
+                return;
+            
+            if (_damageNumbers.Count == 0)
+                return;
+            
+            foreach (var damageNumber in _damageNumbers)
+            {
+                // Position in world space (above entity, above health bar)
+                Vector2 worldPos = damageNumber.Position + new Vector2(0, -50.0f);
+                
+                string damageText = $"-{damageNumber.Damage:F0}";
+                Vector2 textSize = _uiFont.MeasureString(damageText);
+                Vector2 textPos = worldPos - new Vector2(textSize.X / 2.0f, textSize.Y / 2.0f);
+                
+                // Draw with alpha fade
+                float alpha = damageNumber.Alpha;
+                if (alpha <= 0.01f)
+                    continue; // Skip if invisible
+                    
+                byte alphaByte = (byte)(255 * alpha);
+                byte shadowAlpha = (byte)(128 * alpha);
+                Color textColor = new Color((byte)255, (byte)100, (byte)100, alphaByte); // Red damage text
+                
+                // Draw shadow for better visibility (small offset in world space)
+                spriteBatch.DrawString(_uiFont, damageText, textPos + new Vector2(2, 2), new Color((byte)0, (byte)0, (byte)0, shadowAlpha));
+                spriteBatch.DrawString(_uiFont, damageText, textPos, textColor);
+            }
+        }
+        
+        private void DrawDamageNumbers(SpriteBatch spriteBatch)
+        {
+            // This method is no longer used - damage numbers are drawn in world space
+            // Keeping for compatibility
+        }
+        
+        private void DrawBloodSplat(SpriteBatch spriteBatch, Vector2 position)
+        {
+            const float splatSize = 48.0f;
+            const float splatOffsetY = 8.0f; // Position slightly below enemy center
+            
+            // Create blood splat texture if needed
+            if (_bloodSplatTexture == null)
+            {
+                CreateBloodSplatTexture();
+            }
+            
+            if (_bloodSplatTexture != null)
+            {
+                Vector2 splatPosition = position + new Vector2(0, splatOffsetY) - new Vector2(splatSize / 2.0f, splatSize / 2.0f);
+                spriteBatch.Draw(_bloodSplatTexture, splatPosition, Color.White);
+            }
+        }
+        
+        private void CreateBloodSplatTexture()
+        {
+            const int size = 48;
+            _bloodSplatTexture = new Texture2D(_graphicsDevice, size, size);
+            Color[] colorData = new Color[size * size];
+            
+            Vector2 center = new Vector2(size / 2.0f, size / 2.0f);
+            Random random = new Random(42); // Fixed seed for consistent splat shape
+            
+            // Create irregular blood splat shape
+            for (int x = 0; x < size; x++)
+            {
+                for (int y = 0; y < size; y++)
+                {
+                    Vector2 pos = new Vector2(x, y);
+                    float distance = Vector2.Distance(pos, center);
+                    float normalizedDist = distance / (size / 2.0f);
+                    
+                    // Create irregular shape using noise-like pattern
+                    float angle = (float)Math.Atan2(y - center.Y, x - center.X);
+                    float radiusVariation = 0.7f + (float)(random.NextDouble() * 0.3f); // Vary radius
+                    float baseRadius = (size / 2.0f) * radiusVariation;
+                    
+                    // Add some spikes/droplets
+                    float spikeAngle = angle * 3.0f; // Multiple spikes
+                    float spikeAmount = (float)(Math.Sin(spikeAngle) * 0.2f + 1.0f);
+                    float effectiveRadius = baseRadius * spikeAmount;
+                    
+                    if (normalizedDist <= 1.0f)
+                    {
+                        // Main splat body
+                        float alpha = 1.0f - (normalizedDist * 0.8f); // Fade out towards edges
+                        alpha = MathHelper.Clamp(alpha, 0f, 1f);
+                        
+                        // Dark red blood color
+                        byte red = (byte)(120 + normalizedDist * 30); // Darker in center
+                        byte green = 0;
+                        byte blue = 0;
+                        byte alphaByte = (byte)(alpha * 200); // Semi-transparent
+                        
+                        colorData[y * size + x] = new Color(red, green, blue, alphaByte);
+                    }
+                    else
+                    {
+                        colorData[y * size + x] = Color.Transparent;
+                    }
+                }
+            }
+            
+            // Add some random droplets around the splat
+            for (int i = 0; i < 8; i++)
+            {
+                float dropletAngle = (float)(random.NextDouble() * Math.PI * 2);
+                float dropletDistance = (size / 2.0f) * (0.6f + (float)(random.NextDouble() * 0.4f));
+                int dropletX = (int)(center.X + Math.Cos(dropletAngle) * dropletDistance);
+                int dropletY = (int)(center.Y + Math.Sin(dropletAngle) * dropletDistance);
+                int dropletSize = 2 + random.Next(3);
+                
+                for (int dx = -dropletSize; dx <= dropletSize; dx++)
+                {
+                    for (int dy = -dropletSize; dy <= dropletSize; dy++)
+                    {
+                        int px = dropletX + dx;
+                        int py = dropletY + dy;
+                        if (px >= 0 && px < size && py >= 0 && py < size)
+                        {
+                            float dist = (float)Math.Sqrt(dx * dx + dy * dy);
+                            if (dist <= dropletSize)
+                            {
+                                colorData[py * size + px] = new Color(150, 0, 0, 180);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            _bloodSplatTexture.SetData(colorData);
         }
     }
 }

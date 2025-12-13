@@ -13,6 +13,10 @@ namespace Project9
         private List<Enemy> _enemies = new List<Enemy>();
         private List<SecurityCamera> _cameras = new List<SecurityCamera>();
         private CollisionManager? _collisionManager;
+        private RenderSystem? _renderSystem;
+        
+        // Debug: Track if damage numbers are being called
+        private int _damageNumberCallCount = 0;
         
         // Performance tracking
         private System.Diagnostics.Stopwatch _pathfindingStopwatch = new System.Diagnostics.Stopwatch();
@@ -50,6 +54,14 @@ namespace Project9
         public void SetCollisionManager(CollisionManager collisionManager)
         {
             _collisionManager = collisionManager;
+        }
+        
+        /// <summary>
+        /// Set the RenderSystem (for showing damage numbers)
+        /// </summary>
+        public void SetRenderSystem(RenderSystem renderSystem)
+        {
+            _renderSystem = renderSystem;
         }
 
         /// <summary>
@@ -150,14 +162,23 @@ namespace Project9
             }
             
             // Update player movement with CollisionManager for perfect collision resolution
-            _player.Update(
-                followPosition, 
-                deltaTime, 
-                playerCollisionCheck, 
-                (from, to) => _collisionManager.IsLineOfSightBlocked(from, to),
-                _collisionManager,
-                combatEnemyList
-            );
+            // Only update if player is alive
+            if (_player.IsAlive)
+            {
+                _player.Update(
+                    followPosition, 
+                    deltaTime, 
+                    playerCollisionCheck, 
+                    (from, to) => _collisionManager.IsLineOfSightBlocked(from, to),
+                    _collisionManager,
+                    combatEnemyList
+                );
+            }
+            else
+            {
+                // Update death animation if dead
+                _player.UpdateDeathAnimation(deltaTime);
+            }
             
             // Count active pathfinding
             if (_player.TargetPosition.HasValue)
@@ -165,6 +186,7 @@ namespace Project9
                 _activePathfindingCount++;
             }
 
+<<<<<<< HEAD
             // Update all cameras first (they can alert enemies)
             bool anyCameraDetecting = false;
             foreach (var camera in _cameras)
@@ -230,8 +252,19 @@ namespace Project9
             }
 
             // Update all enemies
+=======
+            // Update all enemies (keep dead ones but don't update them)
+>>>>>>> 2ff0327 (Separate movement and attack collision - allow free movement during combat)
             foreach (var enemy in _enemies)
             {
+                // Only update alive enemies
+                if (!enemy.IsAlive)
+                {
+                    // Update death animation/pulse for dead enemies
+                    enemy.UpdateDeathAnimation(deltaTime);
+                    continue;
+                }
+                
                 // Capture enemy position for collision checking (to exclude self from collision)
                 Vector2 enemyCurrentPos = enemy.Position;
                 
@@ -246,8 +279,12 @@ namespace Project9
                     (pos) => _collisionManager.CheckCollision(pos, true, enemyCurrentPos), 
                     (from, to) => _collisionManager.IsLineOfSightBlocked(from, to, enemyCurrentPos),
                     _collisionManager,
+<<<<<<< HEAD
                     terrainOnlyCheck, // Pass terrain-only check for pathfinding
                     _alarmActive
+=======
+                    _player.IsAlive // Pass player alive status
+>>>>>>> 2ff0327 (Separate movement and attack collision - allow free movement during combat)
                 );
                 
                 // Count active pathfinding
@@ -256,12 +293,21 @@ namespace Project9
                     _activePathfindingCount++;
                 }
 
-                // Check if enemy hits player
-                float distanceToPlayer = Vector2.Distance(_player.Position, enemy.Position);
-                if (enemy.IsAttacking && distanceToPlayer <= enemy.AttackRange)
+                // Check if enemy hits player (only if player is alive)
+                if (_player.IsAlive)
                 {
-                    _player.TakeHit();
-                    break; // Only take one hit per frame
+                    float distanceToPlayer = Vector2.Distance(_player.Position, enemy.Position);
+                    if (enemy.IsAttacking && distanceToPlayer <= enemy.AttackRange)
+                    {
+                        _player.TakeDamage(GameConfig.EnemyAttackDamage);
+                        if (_renderSystem != null)
+                        {
+                            _renderSystem.ShowDamageNumber(_player.Position, GameConfig.EnemyAttackDamage);
+                            _damageNumberCallCount++;
+                        }
+                        LogOverlay.Log($"[EntityManager] Player took {GameConfig.EnemyAttackDamage} damage! Health: {_player.CurrentHealth:F1}/{_player.MaxHealth:F1}", LogLevel.Warning);
+                        break; // Only take one hit per frame
+                    }
                 }
             }
             
@@ -277,6 +323,7 @@ namespace Project9
             if (_collisionManager == null)
                 throw new InvalidOperationException("CollisionManager must be set before calling MovePlayerTo");
             
+<<<<<<< HEAD
             // Determine which enemy the player is in combat with (if any)
             Enemy? combatEnemy = GetEnemyInCombat();
             
@@ -312,6 +359,17 @@ namespace Project9
                 target, 
                 playerCollisionCheck,
                 (pos) => _collisionManager.CheckCollision(pos, false) // Terrain-only for target validation
+=======
+            // CRITICAL: Always allow movement - never block it
+            // In Diablo 2 style, player can always move, even when being attacked
+            // Don't check for enemies near target - player should be able to move anywhere
+            
+            Console.WriteLine($"[EntityManager] Move player to ({target.X:F0}, {target.Y:F0})");
+            _player.SetTarget(
+                target, 
+                (pos) => _collisionManager.CheckMovementCollision(pos), // Movement collision - terrain only, no enemies
+                (pos) => _collisionManager.CheckMovementCollision(pos) // Terrain-only for target validation
+>>>>>>> 2ff0327 (Separate movement and attack collision - allow free movement during combat)
             );
         }
 
@@ -320,8 +378,26 @@ namespace Project9
         /// </summary>
         public void AttackEnemy(Enemy enemy)
         {
-            Console.WriteLine("[EntityManager] Attacked enemy");
-            enemy.TakeHit();
+            if (!enemy.IsAlive)
+                return;
+            
+            // Make player face the enemy when attacking
+            _player.FaceTarget(enemy.Position);
+                
+            enemy.TakeDamage(GameConfig.PlayerAttackDamage);
+            if (_renderSystem != null)
+            {
+                _renderSystem.ShowDamageNumber(enemy.Position, GameConfig.PlayerAttackDamage);
+            }
+            LogOverlay.Log($"[EntityManager] Player attacked enemy! Enemy health: {enemy.CurrentHealth:F1}/{enemy.MaxHealth:F1}", LogLevel.Info);
+            
+            if (!enemy.IsAlive)
+            {
+                LogOverlay.Log("[EntityManager] Enemy defeated!", LogLevel.Info);
+            }
+            
+            // IMPORTANT: Never clear movement target - player can always move
+            // Attacks don't block movement in Diablo 2 style
         }
 
         /// <summary>

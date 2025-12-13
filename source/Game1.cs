@@ -108,6 +108,9 @@ namespace Project9
             
             _inputManager = new InputManager(_camera, ScreenToWorld);
             _renderSystem = new RenderSystem(GraphicsDevice, _spriteBatch, _map, _camera, _uiFont);
+            
+            // Set RenderSystem in EntityManager (for damage numbers)
+            _entityManager.SetRenderSystem(_renderSystem);
             _diagnostics = new DiagnosticsOverlay();
             _logOverlay = new LogOverlay();
             
@@ -230,10 +233,14 @@ namespace Project9
                         {
                             _entityManager.AttackEnemy(inputEvent.TargetEnemy);
                         }
+                        // IMPORTANT: In Diablo 2 style, attacks don't block movement
+                        // Player can immediately click to move after attacking
                         break;
 
                     case InputAction.MoveTo:
                         LogOverlay.Log($"[Input] Move to: ({inputEvent.WorldPosition.X:F1}, {inputEvent.WorldPosition.Y:F1})", LogLevel.Info);
+                        // CRITICAL: Always process movement - never block it
+                        // This should work even if player is being attacked or just attacked
                         _entityManager.MovePlayerTo(inputEvent.WorldPosition);
                         _renderSystem.ShowClickEffect(inputEvent.WorldPosition);
                         break;
@@ -302,6 +309,9 @@ namespace Project9
 
             // Update click effect
             _renderSystem.UpdateClickEffect(deltaTime);
+            
+            // Update damage numbers
+            _renderSystem.UpdateDamageNumbers(deltaTime);
             
             // Update log overlay
             _logOverlay.Update(deltaTime);

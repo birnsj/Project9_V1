@@ -13,8 +13,21 @@ namespace Project9
         private Color _sneakColor;
         private bool _isSneaking;
         private float _rotation; // Facing direction in radians
+        
+        // Death animation
+        private float _deathPulseTimer = 0.0f;
+        private float _deathPulseSpeed = 2.0f; // Pulses per second
+        private bool _isDead = false;
+        
+        // Respawn system
+        private Vector2 _spawnPosition;
+        private float _respawnTimer = 0.0f;
+        private const float RESPAWN_COUNTDOWN = 10.0f; // 10 seconds
 
         public bool IsSneaking => _isSneaking;
+        public bool IsDead => _isDead;
+        public float RespawnTimer => _respawnTimer;
+        public bool IsRespawning => _isDead && _respawnTimer > 0.0f;
 
         public float WalkSpeed
         {
@@ -29,15 +42,29 @@ namespace Project9
         }
 
         public Player(Vector2 startPosition) 
-            : base(startPosition, Color.Red, GameConfig.PlayerWalkSpeed, GameConfig.PlayerRunSpeed)
+            : base(startPosition, Color.Red, GameConfig.PlayerWalkSpeed, GameConfig.PlayerRunSpeed, maxHealth: 100f)
         {
             _sneakSpeed = _walkSpeed * GameConfig.PlayerSneakSpeedMultiplier;
             _sneakColor = Color.Purple;
             _isSneaking = false;
             _rotation = 0.0f; // Initialize facing direction
+            _spawnPosition = startPosition; // Store spawn position for respawn
         }
         
         public float Rotation => _rotation;
+        
+        /// <summary>
+        /// Set rotation to face a target position
+        /// </summary>
+        public void FaceTarget(Vector2 targetPosition)
+        {
+            Vector2 direction = targetPosition - _position;
+            if (direction.LengthSquared() > 0.01f)
+            {
+                direction.Normalize();
+                _rotation = (float)Math.Atan2(direction.Y, direction.X);
+            }
+        }
 
         public void ToggleSneak()
         {
@@ -47,6 +74,10 @@ namespace Project9
 
         public void SetTarget(Vector2 target, Func<Vector2, bool>? checkCollision = null, Func<Vector2, bool>? checkTerrainOnly = null)
         {
+            // Don't allow setting target when dead
+            if (_isDead || !IsAlive)
+                return;
+                
             // Always set target immediately, even if the exact location is blocked
             // This ensures clicks are never ignored - we'll try to get as close as possible
             // IMPORTANT: Completely reset all movement state to prevent progressive issues
@@ -218,7 +249,82 @@ namespace Project9
 
         public override void Update(float deltaTime)
         {
+            // Check if player just died
+            if (!_isDead && !IsAlive)
+            {
+                _isDead = true;
+                _respawnTimer = RESPAWN_COUNTDOWN; // Start countdown
+                ClearTarget(); // Stop movement when dead
+            }
+            
+            // Update death animation and respawn timer if dead
+            if (_isDead)
+            {
+                _deathPulseTimer += deltaTime * _deathPulseSpeed;
+                
+                // Update respawn countdown
+                if (_respawnTimer > 0.0f)
+                {
+                    _respawnTimer -= deltaTime;
+                    if (_respawnTimer <= 0.0f)
+                    {
+                        Respawn();
+                    }
+                }
+                return; // Don't update movement when dead
+            }
+            
             Update(null, deltaTime, null, null);
+        }
+        
+        /// <summary>
+        /// Update death animation (pulsing effect)
+        /// </summary>
+        public void UpdateDeathAnimation(float deltaTime)
+        {
+            if (!_isDead && !IsAlive)
+            {
+                _isDead = true;
+                _respawnTimer = RESPAWN_COUNTDOWN; // Start countdown
+            }
+            
+            if (_isDead)
+            {
+                _deathPulseTimer += deltaTime * _deathPulseSpeed;
+                
+                // Update respawn countdown
+                if (_respawnTimer > 0.0f)
+                {
+                    _respawnTimer -= deltaTime;
+                    if (_respawnTimer <= 0.0f)
+                    {
+                        Respawn();
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Respawn the player at spawn position
+        /// </summary>
+        public void Respawn()
+        {
+            _isDead = false;
+            _respawnTimer = 0.0f;
+            _deathPulseTimer = 0.0f;
+            _currentHealth = _maxHealth; // Restore full health
+            _position = _spawnPosition; // Return to spawn position
+            ClearTarget(); // Clear any movement targets
+            _isSneaking = false;
+            _color = _normalColor; // Reset color
+        }
+        
+        /// <summary>
+        /// Set the spawn position (for respawning)
+        /// </summary>
+        public void SetSpawnPosition(Vector2 spawnPosition)
+        {
+            _spawnPosition = spawnPosition;
         }
 
         public void Update(Vector2? followPosition, float deltaTime, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, System.Collections.Generic.IEnumerable<Enemy>? specificEnemies = null)
@@ -351,6 +457,7 @@ namespace Project9
                     // Use CollisionManager's advanced collision resolution if available
                     if (collisionManager != null)
                     {
+<<<<<<< HEAD
                         // Move with swept collision and sliding
                         // IMPORTANT: During combat, don't check enemy collision - allow player to move freely
                         // Enemy collision would lock the player to the enemy, preventing disengagement
@@ -366,6 +473,10 @@ namespace Project9
                         {
                             newPos = collisionManager.MoveWithCollision(_position, nextPosition, true);
                         }
+=======
+                        // Move with swept collision and sliding - MOVEMENT ONLY (no enemy collision)
+                        Vector2 newPos = collisionManager.MoveWithCollisionMovement(_position, nextPosition);
+>>>>>>> 2ff0327 (Separate movement and attack collision - allow free movement during combat)
                         
                         // Accept any movement, even small ones, to prevent getting stuck when path exists
                         // This ensures the player continues moving along the path even with small movements
@@ -633,6 +744,19 @@ namespace Project9
             {
                 Vector2 drawPosition = _position - new Vector2(32, 16);
                 Color drawColor = _isSneaking ? _sneakColor : _normalColor;
+                
+                // Apply pulsing effect for dead player
+                if (_isDead)
+                {
+                    float pulse = (float)(Math.Sin(_deathPulseTimer * Math.PI * 2) * 0.3f + 0.7f); // Pulse between 0.7 and 1.0
+                    drawColor = new Color(
+                        (byte)(drawColor.R * pulse),
+                        (byte)(drawColor.G * pulse),
+                        (byte)(drawColor.B * pulse),
+                        (byte)(drawColor.A * pulse)
+                    );
+                }
+                
                 spriteBatch.Draw(_diamondTexture, drawPosition, drawColor);
             }
         }

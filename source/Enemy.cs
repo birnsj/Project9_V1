@@ -28,6 +28,11 @@ namespace Project9
         private const float SEARCH_DURATION = 5.0f; // Search for 5 seconds
         private const float SEARCH_RADIUS = 200.0f; // Search within 200 pixels of last known position
         
+        // Death animation
+        private float _deathPulseTimer = 0.0f;
+        private float _deathPulseSpeed = 2.0f; // Pulses per second
+        private bool _isDead = false;
+        
         // Sight cone and rotation
         private float _rotation;
         
@@ -76,7 +81,7 @@ namespace Project9
         }
 
         public Enemy(Vector2 startPosition) 
-            : base(startPosition, Color.DarkRed, GameConfig.EnemyChaseSpeed, GameConfig.EnemyChaseSpeed)
+            : base(startPosition, Color.DarkRed, GameConfig.EnemyChaseSpeed, GameConfig.EnemyChaseSpeed, maxHealth: 50f)
         {
             _originalPosition = startPosition;
             _attackRange = GameConfig.EnemyAttackRange;
@@ -127,8 +132,30 @@ namespace Project9
         {
             // This signature for base compatibility - use full Update below
         }
+        
+        /// <summary>
+        /// Update death animation (pulsing effect)
+        /// </summary>
+        public void UpdateDeathAnimation(float deltaTime)
+        {
+            if (!_isDead && !IsAlive)
+            {
+                _isDead = true;
+            }
+            
+            if (_isDead)
+            {
+                _deathPulseTimer += deltaTime * _deathPulseSpeed;
+            }
+        }
+        
+        public bool IsDead => _isDead;
 
+<<<<<<< HEAD
         public void Update(Vector2 playerPosition, float deltaTime, bool playerIsSneaking = false, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, Func<Vector2, bool>? checkTerrainOnly = null, bool alarmActive = false)
+=======
+        public void Update(Vector2 playerPosition, float deltaTime, bool playerIsSneaking = false, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, bool playerIsAlive = true)
+>>>>>>> 2ff0327 (Separate movement and attack collision - allow free movement during combat)
         {
             UpdateFlashing(deltaTime);
 
@@ -140,6 +167,18 @@ namespace Project9
             if (_exclamationTimer > 0.0f)
             {
                 _exclamationTimer -= deltaTime;
+            }
+
+            // If player is dead, return to original position and clear detection
+            if (!playerIsAlive)
+            {
+                if (_hasDetectedPlayer)
+                {
+                    _hasDetectedPlayer = false;
+                    _isAttacking = false;
+                }
+                ReturnToOriginal(deltaTime, checkCollision, collisionManager);
+                return;
             }
 
             Vector2 directionToPlayer = playerPosition - _position;
@@ -246,6 +285,10 @@ namespace Project9
             {
                 if (distanceToPlayer <= _attackRange)
                 {
+                    // Face the player when in attack range
+                    directionToPlayer.Normalize();
+                    _rotation = (float)Math.Atan2(directionToPlayer.Y, directionToPlayer.X);
+                    
                     if (_currentAttackCooldown <= 0.0f)
                     {
                         _isAttacking = true;
@@ -260,12 +303,6 @@ namespace Project9
                 {
                     _isAttacking = false;
                     ChaseTarget(playerPosition, distanceToPlayer, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
-                }
-                
-                if (distanceToPlayer > _attackRange)
-                {
-                    directionToPlayer.Normalize();
-                    _rotation = (float)Math.Atan2(directionToPlayer.Y, directionToPlayer.X);
                 }
             }
             else if (_isSearching)
@@ -940,10 +977,23 @@ namespace Project9
             {
                 Color drawColor = _isAttacking ? Color.OrangeRed : _color;
                 Vector2 drawPosition = _position - new Vector2(32, 16);
+                
+                // Apply pulsing effect for dead enemies
+                if (_isDead)
+                {
+                    float pulse = (float)(Math.Sin(_deathPulseTimer * Math.PI * 2) * 0.3f + 0.7f); // Pulse between 0.7 and 1.0
+                    drawColor = new Color(
+                        (byte)(drawColor.R * pulse),
+                        (byte)(drawColor.G * pulse),
+                        (byte)(drawColor.B * pulse),
+                        (byte)(drawColor.A * pulse)
+                    );
+                }
+                
                 spriteBatch.Draw(_diamondTexture, drawPosition, drawColor);
             }
             
-            if (_hasDetectedPlayer)
+            if (_hasDetectedPlayer && !_isDead)
             {
                 if (_exclamationTexture == null)
                 {

@@ -34,6 +34,12 @@ namespace Project9
         /// <summary>Enemy attack cooldown in seconds</summary>
         public const float EnemyAttackCooldown = 1.0f;
         
+        /// <summary>Damage dealt by enemy per attack</summary>
+        public const float EnemyAttackDamage = 10.0f;
+        
+        /// <summary>Damage dealt by player per attack</summary>
+        public const float PlayerAttackDamage = 10.0f;
+        
         /// <summary>Detection range multiplier when player is sneaking</summary>
         public const float EnemySneakDetectionMultiplier = 0.5f;
         
