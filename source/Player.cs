@@ -13,6 +13,7 @@ namespace Project9
         private Color _sneakColor;
         private bool _isSneaking;
         private float _rotation; // Facing direction in radians
+        private Vector2? _attackTarget; // Target position to face when attacking
         
         // Death animation
         private float _deathPulseTimer = 0.0f;
@@ -65,6 +66,23 @@ namespace Project9
                 _rotation = (float)Math.Atan2(direction.Y, direction.X);
             }
         }
+        
+        /// <summary>
+        /// Set attack target to keep facing during attack
+        /// </summary>
+        public void SetAttackTarget(Vector2 targetPosition)
+        {
+            _attackTarget = targetPosition;
+            FaceTarget(targetPosition);
+        }
+        
+        /// <summary>
+        /// Clear attack target (when attack ends)
+        /// </summary>
+        public void ClearAttackTarget()
+        {
+            _attackTarget = null;
+        }
 
         public void ToggleSneak()
         {
@@ -77,6 +95,9 @@ namespace Project9
             // Don't allow setting target when dead
             if (_isDead || !IsAlive)
                 return;
+            
+            // Clear attack target when setting a new movement target
+            _attackTarget = null;
                 
             // Always set target immediately, even if the exact location is blocked
             // This ensures clicks are never ignored - we'll try to get as close as possible
@@ -443,8 +464,16 @@ namespace Project9
                 else if (distance > stopThreshold)
                 {
                     direction.Normalize();
-                    // Update rotation based on movement direction
-                    _rotation = (float)Math.Atan2(direction.Y, direction.X);
+                    // Update rotation based on movement direction, unless attacking
+                    // If attacking, keep facing the attack target
+                    if (_attackTarget.HasValue)
+                    {
+                        FaceTarget(_attackTarget.Value);
+                    }
+                    else
+                    {
+                        _rotation = (float)Math.Atan2(direction.Y, direction.X);
+                    }
                     float moveDistance = _currentSpeed * deltaTime;
                     
                     if (moveDistance > distance)

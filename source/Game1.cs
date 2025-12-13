@@ -18,6 +18,7 @@ namespace Project9
         private ViewportCamera _camera = null!;
         private IsometricMap _map = null!;
         private CollisionManager _collisionManager = null!;
+        private KeyboardState _previousKeyboardState;
         private EntityManager _entityManager = null!;
         private InputManager _inputManager = null!;
         private RenderSystem _renderSystem = null!;
@@ -53,6 +54,7 @@ namespace Project9
             _graphics.PreferredBackBufferHeight = 720;
             _graphics.ApplyChanges();
             _camera = new ViewportCamera();
+            _previousKeyboardState = Keyboard.GetState();
             base.Initialize();
         }
 
@@ -206,6 +208,18 @@ namespace Project9
             if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || 
                 Keyboard.GetState().IsKeyDown(Keys.Escape))
                 Exit();
+
+            // Check for space key to respawn immediately during countdown
+            KeyboardState keyboardState = Keyboard.GetState();
+            if (keyboardState.IsKeyDown(Keys.Space) && 
+                !_previousKeyboardState.IsKeyDown(Keys.Space) && 
+                _entityManager.Player.IsDead && 
+                _entityManager.Player.IsRespawning)
+            {
+                _entityManager.Player.Respawn();
+                LogOverlay.Log("[Game1] Player respawned early via Space key", LogLevel.Info);
+            }
+            _previousKeyboardState = keyboardState;
 
             float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
             

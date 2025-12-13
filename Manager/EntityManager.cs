@@ -176,6 +176,23 @@ namespace Project9
             }
             else
             {
+                // Player is dead - reset alarms and enemy detection
+                if (_alarmActive)
+                {
+                    _alarmTimer = 0.0f;
+                    _alarmActive = false;
+                    LogOverlay.Log("[EntityManager] Alarm reset - player died", LogLevel.Info);
+                    
+                    // Reset all enemy detection states when alarm is reset
+                    foreach (var enemy in _enemies)
+                    {
+                        if (enemy.HasDetectedPlayer)
+                        {
+                            enemy.ResetDetection();
+                        }
+                    }
+                }
+                
                 // Update death animation if dead
                 _player.UpdateDeathAnimation(deltaTime);
             }
@@ -292,6 +309,9 @@ namespace Project9
                     float distanceToPlayer = Vector2.Distance(_player.Position, enemy.Position);
                     if (enemy.IsAttacking && distanceToPlayer <= enemy.AttackRange)
                     {
+                        // Make enemy face the player when attacking
+                        enemy.FaceTarget(_player.Position);
+                        
                         _player.TakeDamage(GameConfig.EnemyAttackDamage);
                         if (_renderSystem != null)
                         {
@@ -336,8 +356,8 @@ namespace Project9
             if (!enemy.IsAlive)
                 return;
             
-            // Make player face the enemy when attacking
-            _player.FaceTarget(enemy.Position);
+            // Make player face the enemy when attacking and keep facing during attack
+            _player.SetAttackTarget(enemy.Position);
                 
             enemy.TakeDamage(GameConfig.PlayerAttackDamage);
             if (_renderSystem != null)

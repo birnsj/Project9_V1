@@ -37,6 +37,20 @@ namespace Project9
         private float _rotation;
         
         public float Rotation => _rotation;
+        
+        /// <summary>
+        /// Set rotation to face a target position
+        /// </summary>
+        public void FaceTarget(Vector2 targetPosition)
+        {
+            Vector2 direction = targetPosition - _position;
+            if (direction.LengthSquared() > 0.01f)
+            {
+                direction.Normalize();
+                _rotation = (float)Math.Atan2(direction.Y, direction.X);
+            }
+        }
+        
         private float _sightConeAngle;
         private float _sightConeLength;
         private float _rotationSpeed;

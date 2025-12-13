@@ -921,7 +921,19 @@ namespace Project9
                 _graphicsDevice.Viewport.Width / 2.0f - countdownTextSize.X / 2.0f,
                 _graphicsDevice.Viewport.Height / 2.0f - 20.0f
             );
-            spriteBatch.DrawString(_uiFont, countdownText, countdownTextPos, Color.White            );
+            spriteBatch.DrawString(_uiFont, countdownText, countdownTextPos, Color.White);
+            
+            // "Press Space to Respawn" message
+            if (player.IsRespawning)
+            {
+                string respawnHintText = "Press Space to Respawn";
+                Vector2 respawnHintTextSize = _uiFont.MeasureString(respawnHintText);
+                Vector2 respawnHintTextPos = new Vector2(
+                    _graphicsDevice.Viewport.Width / 2.0f - respawnHintTextSize.X / 2.0f,
+                    _graphicsDevice.Viewport.Height / 2.0f + 20.0f
+                );
+                spriteBatch.DrawString(_uiFont, respawnHintText, respawnHintTextPos, Color.Yellow);
+            }
         }
         
         private void DrawDamageNumbersWorldSpace(SpriteBatch spriteBatch)
