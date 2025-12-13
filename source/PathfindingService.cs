@@ -28,7 +28,7 @@ namespace Project9
         /// <summary>
         /// Rent a path list from the pool (or create new if pool is empty)
         /// </summary>
-        private static List<Vector2> RentPath()
+        public static List<Vector2> RentPath()
         {
             if (_pathPool.Count > 0)
             {

@@ -23,6 +23,12 @@ namespace Project9
         private LRUCache<(int, int), bool> _staticCollisionCache;
         private const int MAX_CACHE_SIZE = 10000; // Maximum cache entries
         
+        // Line of sight cache to avoid redundant checks
+        private Dictionary<(int, int, int, int), (bool blocked, float timestamp)> _losCache = new();
+        private const float LOS_CACHE_DURATION = 0.1f; // Cache for 100ms
+        private float _lastLosCacheCleanup = 0.0f;
+        private const float LOS_CACHE_CLEANUP_INTERVAL = 2.0f; // Clean every 2 seconds
+        
         // Performance tracking
         private float _lastCollisionCheckTimeMs = 0.0f;
         private int _cacheHits = 0;
@@ -400,8 +406,8 @@ namespace Project9
             
             direction.Normalize();
             
-            // Check along the path with adaptive step size
-            float stepSize = 4.0f; // Smaller step = more accurate but slower
+            // Check along the path with configurable step size
+            float stepSize = GameConfig.CollisionSweepStepSize;
             int steps = (int)(distance / stepSize) + 1;
             
             for (int i = 1; i <= steps; i++)
@@ -451,8 +457,8 @@ namespace Project9
             
             direction.Normalize();
             
-            // Check along the path with adaptive step size
-            float stepSize = 4.0f; // Smaller step = more accurate but slower
+            // Check along the path with configurable step size
+            float stepSize = GameConfig.CollisionSweepStepSize;
             int steps = (int)(distance / stepSize) + 1;
             
             for (int i = 1; i <= steps; i++)
@@ -663,11 +669,91 @@ namespace Project9
         {
             return IsLineOfSightBlocked(from, to, null);
         }
+        
+        /// <summary>
+        /// Round vector to grid for cache key
+        /// </summary>
+        private (int, int) RoundToGridForCache(Vector2 pos, float gridSize)
+        {
+            return ((int)(pos.X / gridSize), (int)(pos.Y / gridSize));
+        }
+        
+        /// <summary>
+        /// Get current time in seconds (for cache timestamps)
+        /// </summary>
+        private float GetCurrentTime()
+        {
+            return (float)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency;
+        }
+        
+        /// <summary>
+        /// Clean old LOS cache entries
+        /// </summary>
+        private void CleanLosCache(float currentTime)
+        {
+            if (currentTime - _lastLosCacheCleanup < LOS_CACHE_CLEANUP_INTERVAL)
+                return;
+            
+            _lastLosCacheCleanup = currentTime;
+            
+            var keysToRemove = new List<(int, int, int, int)>();
+            foreach (var kvp in _losCache)
+            {
+                if (currentTime - kvp.Value.timestamp > LOS_CACHE_DURATION * 2)
+                {
+                    keysToRemove.Add(kvp.Key);
+                }
+            }
+            
+            foreach (var key in keysToRemove)
+            {
+                _losCache.Remove(key);
+            }
+        }
 
         /// <summary>
         /// Check if line of sight is blocked by collision, with optional position to exclude
+        /// Includes caching to avoid redundant checks
         /// </summary>
         public bool IsLineOfSightBlocked(Vector2 from, Vector2 to, Vector2? excludePosition)
+        {
+            // Don't cache if excludePosition is provided (entity-specific checks)
+            if (excludePosition.HasValue)
+            {
+                return IsLineOfSightBlockedInternal(from, to, excludePosition);
+            }
+            
+            // Check cache first (round to grid for cache key)
+            float currentTime = GetCurrentTime();
+            var cacheKey = (
+                RoundToGridForCache(from, GameConfig.LineOfSightStepSize).Item1,
+                RoundToGridForCache(from, GameConfig.LineOfSightStepSize).Item2,
+                RoundToGridForCache(to, GameConfig.LineOfSightStepSize).Item1,
+                RoundToGridForCache(to, GameConfig.LineOfSightStepSize).Item2
+            );
+            
+            if (_losCache.TryGetValue(cacheKey, out var cached))
+            {
+                if (currentTime - cached.timestamp < LOS_CACHE_DURATION)
+                {
+                    return cached.blocked;
+                }
+            }
+            
+            // Clean cache periodically
+            CleanLosCache(currentTime);
+            
+            // Calculate and cache result
+            bool blocked = IsLineOfSightBlockedInternal(from, to, excludePosition);
+            _losCache[cacheKey] = (blocked, currentTime);
+            
+            return blocked;
+        }
+        
+        /// <summary>
+        /// Internal line of sight check (actual calculation)
+        /// </summary>
+        private bool IsLineOfSightBlockedInternal(Vector2 from, Vector2 to, Vector2? excludePosition)
         {
             Vector2 direction = to - from;
             float distance = direction.Length();
@@ -679,14 +765,16 @@ namespace Project9
             
             // Start sampling slightly away from 'from' position to avoid self-collision
             // and end slightly before 'to' position to avoid blocking at destination
-            float startOffset = 10.0f; // Skip first 10 pixels from start
-            float endOffset = 10.0f;   // Skip last 10 pixels before end
+            float startOffset = GameConfig.LineOfSightStartOffset;
+            float endOffset = GameConfig.LineOfSightEndOffset;
             float effectiveDistance = distance - startOffset - endOffset;
             
             if (effectiveDistance <= 0)
                 return false; // Too close, consider line of sight clear
             
-            int samples = (int)(effectiveDistance / 16.0f) + 1;
+            // Adaptive step size based on distance (larger steps for longer distances)
+            float stepSize = Math.Max(GameConfig.LineOfSightStepSize, effectiveDistance / 50.0f);
+            int samples = (int)(effectiveDistance / stepSize) + 1;
             for (int i = 0; i <= samples; i++)
             {
                 float t = (float)i / samples;

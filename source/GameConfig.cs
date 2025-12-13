@@ -145,6 +145,19 @@ namespace Project9
         
         /// <summary>Distance threshold for final target when running (pixels)</summary>
         public const float PlayerRunStopThreshold = 5.0f;
+        
+        // ===== COLLISION STEP SIZES =====
+        /// <summary>Step size for swept collision detection (pixels)</summary>
+        public const float CollisionSweepStepSize = 4.0f;
+        
+        /// <summary>Step size for line of sight sampling (pixels)</summary>
+        public const float LineOfSightStepSize = 16.0f;
+        
+        /// <summary>Start offset for line of sight checks (pixels)</summary>
+        public const float LineOfSightStartOffset = 10.0f;
+        
+        /// <summary>End offset for line of sight checks (pixels)</summary>
+        public const float LineOfSightEndOffset = 10.0f;
     }
 }
 

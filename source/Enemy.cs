@@ -28,13 +28,38 @@ namespace Project9
         private const float SEARCH_DURATION = GameConfig.EnemySearchDuration;
         private const float SEARCH_RADIUS = GameConfig.EnemySearchRadius;
         
+        // Chase behavior - track how long player has been out of range
+        private float _outOfRangeTimer = 0.0f;
+        private const float OUT_OF_RANGE_THRESHOLD = 3.0f; // Stop chasing after 3 seconds out of range
+        
         // Death animation
         private float _deathPulseTimer = 0.0f;
         private float _deathPulseSpeed = 2.0f; // Pulses per second
         private bool _isDead = false;
         
+        // Path simplification throttling
+        private float _lastSimplifyTime = 0.0f;
+        private const float SIMPLIFY_INTERVAL = 0.5f; // Only simplify every 0.5s
+        
         // Sight cone and rotation
         private float _rotation;
+        
+        // Cached sight cone direction for performance
+        private Vector2 _cachedDirection;
+        private float _lastRotation = float.MinValue;
+        
+        // Pre-allocated static array to avoid allocations (matches 2:1 aspect ratio of isometric tiles)
+        private static readonly Vector2[] IsometricAxesStatic = new Vector2[]
+        {
+            new Vector2(1, 0),            // East
+            new Vector2(0, 1),            // South
+            new Vector2(-1, 0),           // West
+            new Vector2(0, -1),           // North
+            new Vector2(0.894f, 0.447f),  // Southeast (isometric diagonal)
+            new Vector2(0.894f, -0.447f), // Northeast (isometric diagonal)
+            new Vector2(-0.894f, 0.447f), // Southwest (isometric diagonal)
+            new Vector2(-0.894f, -0.447f) // Northwest (isometric diagonal)
+        };
         
         public float Rotation => _rotation;
         
@@ -70,6 +95,16 @@ namespace Project9
         public bool HasDetectedPlayer => _hasDetectedPlayer;
         
         /// <summary>
+        /// Check if enemy is at its original position (within threshold)
+        /// </summary>
+        public bool IsAtOriginalPosition()
+        {
+            float distanceSquared = Vector2.DistanceSquared(_position, _originalPosition);
+            const float thresholdSquared = 25.0f; // 5.0f * 5.0f
+            return distanceSquared <= thresholdSquared;
+        }
+        
+        /// <summary>
         /// Force the enemy to detect the player (called by cameras when they detect the player)
         /// </summary>
         public void ForceDetectPlayer(Vector2 playerPosition)
@@ -91,6 +126,8 @@ namespace Project9
         {
             _hasDetectedPlayer = false;
             _exclamationTimer = 0.0f;
+            _isSearching = false; // Stop searching so enemy can return to original position
+            _searchTimer = 0.0f; // Reset search timer
             _path?.Clear(); // Clear path so they can return to original position
         }
 
@@ -129,12 +166,23 @@ namespace Project9
         private bool IsPointInSightCone(Vector2 point)
         {
             Vector2 directionToPoint = point - _position;
-            float distance = directionToPoint.Length();
+            float distanceSquared = directionToPoint.LengthSquared();
+            float sightConeLengthSquared = _sightConeLength * _sightConeLength;
             
-            if (distance > _sightConeLength || distance == 0)
+            if (distanceSquared > sightConeLengthSquared || distanceSquared < 0.01f)
                 return false;
             
             directionToPoint.Normalize();
+            
+            // Cache direction vector when rotation changes
+            if (Math.Abs(_rotation - _lastRotation) > 0.01f)
+            {
+                _cachedDirection = new Vector2(
+                    (float)Math.Cos(_rotation),
+                    (float)Math.Sin(_rotation)
+                );
+                _lastRotation = _rotation;
+            }
             
             float pointAngle = (float)Math.Atan2(directionToPoint.Y, directionToPoint.X);
             
@@ -201,7 +249,7 @@ namespace Project9
             }
 
             Vector2 directionToPlayer = playerPosition - _position;
-            float distanceToPlayer = directionToPlayer.Length();
+            float distanceToPlayerSquared = directionToPlayer.LengthSquared();
 
             float effectiveDetectionRange;
             if (_hasDetectedPlayer)
@@ -212,8 +260,9 @@ namespace Project9
             {
                 effectiveDetectionRange = playerIsSneaking ? _detectionRange * GameConfig.EnemySneakDetectionMultiplier : _detectionRange;
             }
+            float effectiveRangeSquared = effectiveDetectionRange * effectiveDetectionRange;
 
-            bool playerInRange = distanceToPlayer <= effectiveDetectionRange;
+            bool playerInRange = distanceToPlayerSquared <= effectiveRangeSquared;
             bool hasLineOfSight = false;
             
             if (playerInRange)
@@ -221,7 +270,7 @@ namespace Project9
                 bool lineOfSightBlocked = checkLineOfSight != null && checkLineOfSight(_position, playerPosition);
                 hasLineOfSight = !lineOfSightBlocked;
                 
-                if (playerIsSneaking && distanceToPlayer <= effectiveDetectionRange && !_hasDetectedPlayer)
+                if (playerIsSneaking && distanceToPlayerSquared <= effectiveRangeSquared && !_hasDetectedPlayer)
                 {
                     if (IsPointInSightCone(playerPosition) && hasLineOfSight)
                     {
@@ -287,22 +336,46 @@ namespace Project9
             
             // If alarm is active, enemies chase even without line of sight
             // Otherwise, they need line of sight to chase
-            bool shouldChase = _hasDetectedPlayer && !_isSearching && distanceToPlayer <= maxChaseRange;
-            if (shouldChase && !alarmActive)
+            float maxChaseRangeSquared = maxChaseRange * maxChaseRange;
+            bool isInRange = distanceToPlayerSquared <= maxChaseRangeSquared;
+            bool hasValidLineOfSight = alarmActive || hasLineOfSight; // During alarm, don't require line of sight
+            bool shouldChaseImmediate = _hasDetectedPlayer && !_isSearching && isInRange && hasValidLineOfSight;
+            
+            // Update out-of-range timer
+            if (_hasDetectedPlayer && !_isSearching)
             {
-                // Only require line of sight if alarm is not active
-                shouldChase = hasLineOfSight;
+                if (isInRange && hasValidLineOfSight)
+                {
+                    // Player is in range and visible - reset timer
+                    _outOfRangeTimer = 0.0f;
+                }
+                else
+                {
+                    // Player is out of range or lost line of sight - increment timer
+                    _outOfRangeTimer += deltaTime;
+                }
             }
+            else
+            {
+                // Not detected or searching - reset timer
+                _outOfRangeTimer = 0.0f;
+            }
+            
+            // Continue chasing if player is in range and visible, OR if within 3 second grace period
+            bool withinGracePeriod = _outOfRangeTimer < OUT_OF_RANGE_THRESHOLD;
+            bool shouldChase = _hasDetectedPlayer && !_isSearching && (shouldChaseImmediate || withinGracePeriod);
             
             // Debug logging
             if (_hasDetectedPlayer && !shouldChase)
             {
-                Console.WriteLine($"[Enemy] HasDetectedPlayer=true but not chasing. isSearching={_isSearching}, distance={distanceToPlayer:F1}, maxRange={maxChaseRange}, hasLoS={hasLineOfSight}, alarmActive={alarmActive}");
+                float distanceToPlayer = (float)Math.Sqrt(distanceToPlayerSquared); // Only calculate for logging
+                Console.WriteLine($"[Enemy] HasDetectedPlayer=true but not chasing. isSearching={_isSearching}, distance={distanceToPlayer:F1}, maxRange={maxChaseRange}, hasLoS={hasLineOfSight}, alarmActive={alarmActive}, outOfRangeTimer={_outOfRangeTimer:F2}");
             }
             
             if (shouldChase)
             {
-                if (distanceToPlayer <= _attackRange)
+                float attackRangeSquared = _attackRange * _attackRange;
+                if (distanceToPlayerSquared <= attackRangeSquared)
                 {
                     // Face the player when in attack range
                     directionToPlayer.Normalize();
@@ -321,6 +394,7 @@ namespace Project9
                 else
                 {
                     _isAttacking = false;
+                    float distanceToPlayer = (float)Math.Sqrt(distanceToPlayerSquared); // Calculate when needed
                     ChaseTarget(playerPosition, distanceToPlayer, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
                 }
             }
@@ -330,10 +404,11 @@ namespace Project9
                 _isAttacking = false;
                 SearchBehavior(deltaTime, checkCollision, collisionManager, checkTerrainOnly);
             }
-            else if (_hasDetectedPlayer && distanceToPlayer > maxChaseRange)
+            else if (_hasDetectedPlayer && _outOfRangeTimer >= OUT_OF_RANGE_THRESHOLD)
             {
-                // Player too far away, return to original position
+                // Player has been out of range for 3 seconds, return to original position
                 _isAttacking = false;
+                _outOfRangeTimer = 0.0f; // Reset timer
                 ReturnToOriginal(deltaTime, checkCollision, collisionManager, checkTerrainOnly);
             }
             else
@@ -368,12 +443,23 @@ namespace Project9
                 );
                 if (_path != null && _path.Count > 0)
                 {
-                    // Use much less aggressive simplification to keep most waypoints needed for obstacles
-                    List<Vector2> originalPath = new List<Vector2>(_path);
-                    _path = PathfindingService.SimplifyPath(_path, 0.4f);
-                    if (_path == null || _path.Count == 0)
+                    // Throttle path simplification to avoid unnecessary work
+                    float currentTime = (float)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency;
+                    if (currentTime - _lastSimplifyTime > SIMPLIFY_INTERVAL)
                     {
-                        _path = originalPath; // Restore if simplification removed everything
+                        // Use much less aggressive simplification to keep most waypoints needed for obstacles
+                        var originalPath = PathfindingService.RentPath();
+                        originalPath.AddRange(_path);
+                        _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                        if (_path == null || _path.Count == 0)
+                        {
+                            _path = originalPath; // Restore if simplification removed everything
+                        }
+                        else
+                        {
+                            PathfindingService.ReturnPath(originalPath);
+                        }
+                        _lastSimplifyTime = currentTime;
                     }
                 }
             }
@@ -395,15 +481,19 @@ namespace Project9
         private void ReturnToOriginal(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null)
         {
             Vector2 directionToOriginal = _originalPosition - _position;
-            float distanceToOriginal = directionToOriginal.Length();
+            float distanceToOriginalSquared = directionToOriginal.LengthSquared();
+            const float thresholdSquared = 25.0f; // 5.0f * 5.0f
             
-            if (distanceToOriginal > 5.0f)
+            if (distanceToOriginalSquared > thresholdSquared)
             {
                 // Use terrain-only check for pathfinding
                 Func<Vector2, bool> terrainCheck = checkTerrainOnly ?? ((pos) => checkCollision != null ? checkCollision(pos) : false);
                 bool pathClear = CheckDirectPath(_originalPosition, terrainCheck);
                 
-                if (!pathClear && (_path == null || _path.Count == 0) && checkTerrainOnly != null)
+                // If stuck for too long, always try pathfinding to avoid deadlocks with other enemies
+                bool shouldUsePathfinding = !pathClear || (_stuckTimer > 0.2f && checkTerrainOnly != null);
+                
+                if (shouldUsePathfinding && (_path == null || _path.Count == 0) && checkTerrainOnly != null)
                 {
                     _path = PathfindingService.FindPath(
                         _position, 
@@ -414,31 +504,41 @@ namespace Project9
                     );
                     if (_path != null && _path.Count > 0)
                     {
-                        List<Vector2> originalPath = new List<Vector2>(_path);
+                        var originalPath = PathfindingService.RentPath();
+                        originalPath.AddRange(_path);
                         _path = PathfindingService.SimplifyPath(_path, 0.4f);
                         if (_path == null || _path.Count == 0)
                         {
                             _path = originalPath; // Restore if simplification removed everything
                         }
+                        else
+                        {
+                            PathfindingService.ReturnPath(originalPath);
+                        }
+                        // Reset stuck timer when we get a new path
+                        _stuckTimer = 0.0f;
                     }
                 }
-                else if (pathClear)
+                else if (pathClear && _stuckTimer < 0.1f)
                 {
+                    // Only clear path if path is clear and not stuck
                     _path?.Clear();
                 }
                 
                 if (_path != null && _path.Count > 0)
                 {
-                    FollowPath(_originalPosition, deltaTime, checkCollision, collisionManager, checkTerrainOnly, faceFinalTarget: false);
+                    FollowPath(_originalPosition, deltaTime, checkCollision, collisionManager, checkTerrainOnly, false, includeEnemies: false);
                 }
                 else
                 {
-                    MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager, checkTerrainOnly, faceTarget: false);
+                    float distanceToOriginal = (float)Math.Sqrt(distanceToOriginalSquared); // Calculate when needed
+                    MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager, checkTerrainOnly, faceTarget: false, includeEnemies: false);
                 }
             }
             else
             {
                 _position = _originalPosition;
+                _stuckTimer = 0.0f; // Reset stuck timer when at original position
                 _hasDetectedPlayer = false;
                 IdleBehavior(deltaTime);
             }
@@ -463,9 +563,9 @@ namespace Project9
             {
                 // Move towards search target
                 Vector2 directionToTarget = _searchTarget - _position;
-                float distance = directionToTarget.Length();
+                float distanceSquared = directionToTarget.LengthSquared();
                 
-                if (distance > 0)
+                if (distanceSquared > 0.01f)
                 {
                     directionToTarget.Normalize();
                     Vector2 desiredPosition = _position + directionToTarget * _currentSpeed * deltaTime;
@@ -492,15 +592,64 @@ namespace Project9
         private void PatrolBehavior(float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null)
         {
             Vector2 directionToOriginal = _originalPosition - _position;
-            float distanceToOriginal = directionToOriginal.Length();
+            float distanceToOriginalSquared = directionToOriginal.LengthSquared();
+            const float thresholdSquared = 25.0f; // 5.0f * 5.0f
             
-            if (distanceToOriginal > 5.0f)
+            if (distanceToOriginalSquared > thresholdSquared)
             {
-                MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager, checkTerrainOnly, faceTarget: false);
+                // Use terrain-only check for pathfinding
+                Func<Vector2, bool> terrainCheck = checkTerrainOnly ?? ((pos) => checkCollision != null ? checkCollision(pos) : false);
+                bool pathClear = CheckDirectPath(_originalPosition, terrainCheck);
+                
+                // If stuck for too long, always try pathfinding to avoid deadlocks with other enemies
+                bool shouldUsePathfinding = !pathClear || (_stuckTimer > 0.2f && checkTerrainOnly != null);
+                
+                if (shouldUsePathfinding && (_path == null || _path.Count == 0) && checkTerrainOnly != null)
+                {
+                    _path = PathfindingService.FindPath(
+                        _position, 
+                        _originalPosition, 
+                        checkTerrainOnly,
+                        GameConfig.PathfindingGridCellWidth,
+                        GameConfig.PathfindingGridCellHeight
+                    );
+                    if (_path != null && _path.Count > 0)
+                    {
+                        var originalPath = PathfindingService.RentPath();
+                        originalPath.AddRange(_path);
+                        _path = PathfindingService.SimplifyPath(_path, 0.4f);
+                        if (_path == null || _path.Count == 0)
+                        {
+                            _path = originalPath; // Restore if simplification removed everything
+                        }
+                        else
+                        {
+                            PathfindingService.ReturnPath(originalPath);
+                        }
+                        // Reset stuck timer when we get a new path
+                        _stuckTimer = 0.0f;
+                    }
+                }
+                else if (pathClear && _stuckTimer < 0.1f)
+                {
+                    // Only clear path if path is clear and not stuck
+                    _path?.Clear();
+                }
+                
+                if (_path != null && _path.Count > 0)
+                {
+                    FollowPath(_originalPosition, deltaTime, checkCollision, collisionManager, checkTerrainOnly, false, includeEnemies: false);
+                }
+                else
+                {
+                    float distanceToOriginal = (float)Math.Sqrt(distanceToOriginalSquared); // Calculate when needed
+                    MoveDirectly(_originalPosition, distanceToOriginal, deltaTime, checkCollision, collisionManager, checkTerrainOnly, faceTarget: false, includeEnemies: false);
+                }
             }
             else
             {
                 _position = _originalPosition;
+                _stuckTimer = 0.0f; // Reset stuck timer when at original position
                 IdleBehavior(deltaTime);
             }
         }
@@ -530,8 +679,9 @@ namespace Project9
             if (checkCollision == null) return true;
             
             Vector2 direction = target - _position;
-            float distance = direction.Length();
+            float distanceSquared = direction.LengthSquared();
             // Use denser sampling (every 8 pixels) like player to catch more obstacles
+            float distance = (float)Math.Sqrt(distanceSquared); // Need actual distance for sampling calculation
             int samples = Math.Max(3, (int)(distance / 8.0f) + 1);
             
             for (int i = 0; i <= samples; i++)
@@ -550,7 +700,7 @@ namespace Project9
             return true;
         }
 
-        private void FollowPath(Vector2 finalTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null, bool faceFinalTarget = false)
+        private void FollowPath(Vector2 finalTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null, bool faceFinalTarget = false, bool includeEnemies = true)
         {
             if (_path == null)
                 return;
@@ -570,10 +720,12 @@ namespace Project9
             {
                 Vector2 waypoint = _path[0];
                 Vector2 direction = waypoint - _position;
-                float distance = direction.Length();
+                float distanceSquared = direction.LengthSquared();
+                const float thresholdSquared = 25.0f; // 5.0f * 5.0f
                 
-                if (distance > 5.0f)
+                if (distanceSquared > thresholdSquared)
                 {
+                    float distance = (float)Math.Sqrt(distanceSquared); // Calculate when needed
                     direction.Normalize();
                     
                     // If not facing final target, face the movement direction (waypoint)
@@ -590,7 +742,7 @@ namespace Project9
                     // Use MoveWithCollision if available, otherwise fall back to simple check
                     if (collisionManager != null)
                     {
-                        Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, true, 3, _position);
+                        Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, includeEnemies, 3, _position);
                         if (Vector2.DistanceSquared(_position, finalPos) > 0.01f)
                         {
                             _position = finalPos;
@@ -610,11 +762,16 @@ namespace Project9
                                 );
                                 if (_path != null && _path.Count > 0)
                                 {
-                                    List<Vector2> originalPath = new List<Vector2>(_path);
+                                    var originalPath = PathfindingService.RentPath();
+                                    originalPath.AddRange(_path);
                                     _path = PathfindingService.SimplifyPath(_path, 0.4f);
                                     if (_path == null || _path.Count == 0)
                                     {
                                         _path = originalPath;
+                                    }
+                                    else
+                                    {
+                                        PathfindingService.ReturnPath(originalPath);
                                     }
                                 }
                             }
@@ -640,11 +797,16 @@ namespace Project9
                             );
                             if (_path != null && _path.Count > 0)
                             {
-                                List<Vector2> originalPath = new List<Vector2>(_path);
+                                var originalPath = PathfindingService.RentPath();
+                                originalPath.AddRange(_path);
                                 _path = PathfindingService.SimplifyPath(_path, 0.4f);
                                 if (_path == null || _path.Count == 0)
                                 {
                                     _path = originalPath;
+                                }
+                                else
+                                {
+                                    PathfindingService.ReturnPath(originalPath);
                                 }
                             }
                         }
@@ -654,7 +816,7 @@ namespace Project9
             }
         }
 
-        private void MoveDirectly(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null, bool faceTarget = true)
+        private void MoveDirectly(Vector2 target, float distanceToTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null, bool faceTarget = true, bool includeEnemies = true)
         {
             Vector2 direction = (target - _position);
             direction.Normalize();
@@ -690,7 +852,7 @@ namespace Project9
                 // Use MoveWithCollision if available for smooth sliding
                 if (collisionManager != null)
                 {
-                    Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, true, 3, _position);
+                    Vector2 finalPos = collisionManager.MoveWithCollision(_position, newPosition, includeEnemies, 3, _position);
                     if (Vector2.DistanceSquared(_position, finalPos) > 0.01f)
                     {
                         _position = finalPos;
@@ -712,11 +874,16 @@ namespace Project9
                             );
                             if (_path != null && _path.Count > 0)
                             {
-                                List<Vector2> originalPath = new List<Vector2>(_path);
+                                var originalPath = PathfindingService.RentPath();
+                                originalPath.AddRange(_path);
                                 _path = PathfindingService.SimplifyPath(_path, 0.4f);
                                 if (_path == null || _path.Count == 0)
                                 {
                                     _path = originalPath;
+                                }
+                                else
+                                {
+                                    PathfindingService.ReturnPath(originalPath);
                                 }
                             }
                             _stuckTimer = 0.0f;
@@ -752,11 +919,16 @@ namespace Project9
                             );
                             if (_path != null && _path.Count > 0)
                             {
-                                List<Vector2> originalPath = new List<Vector2>(_path);
+                                var originalPath = PathfindingService.RentPath();
+                                originalPath.AddRange(_path);
                                 _path = PathfindingService.SimplifyPath(_path, 0.4f);
                                 if (_path == null || _path.Count == 0)
                                 {
                                     _path = originalPath;
+                                }
+                                else
+                                {
+                                    PathfindingService.ReturnPath(originalPath);
                                 }
                             }
                             _stuckTimer = 0.0f;
@@ -776,27 +948,14 @@ namespace Project9
                 return currentPos;
             
             // Isometric-aware slide directions (aligned with diamond collision cells)
-            // These match the 2:1 aspect ratio of isometric tiles
-            Vector2[] isometricAxes = new Vector2[]
-            {
-                new Vector2(1, 0),            // East
-                new Vector2(0, 1),            // South
-                new Vector2(-1, 0),           // West
-                new Vector2(0, -1),           // North
-                new Vector2(0.894f, 0.447f),  // Southeast (isometric diagonal)
-                new Vector2(0.894f, -0.447f), // Northeast (isometric diagonal)
-                new Vector2(-0.894f, 0.447f), // Southwest (isometric diagonal)
-                new Vector2(-0.894f, -0.447f) // Northwest (isometric diagonal)
-            };
-            
             direction.Normalize();
             
             // Find which isometric axis is most aligned with our movement
             int bestAxis = 0;
             float bestDot = float.MinValue;
-            for (int i = 0; i < isometricAxes.Length; i++)
+            for (int i = 0; i < IsometricAxesStatic.Length; i++)
             {
-                float dot = Vector2.Dot(direction, isometricAxes[i]);
+                float dot = Vector2.Dot(direction, IsometricAxesStatic[i]);
                 if (dot > bestDot)
                 {
                     bestDot = dot;
@@ -816,7 +975,7 @@ namespace Project9
             
             foreach (int axisIndex in perpAxes)
             {
-                Vector2 slideDir = isometricAxes[axisIndex];
+                Vector2 slideDir = IsometricAxesStatic[axisIndex];
                 
                 foreach (float scale in scales)
                 {
@@ -935,9 +1094,10 @@ namespace Project9
                 {
                     Vector2 pos = new Vector2(x, y);
                     Vector2 dir = pos - center;
-                    float distance = dir.Length();
+                    float distanceSquared = dir.LengthSquared();
+                    float sightConeLengthSquared = _sightConeLength * _sightConeLength;
                     
-                    if (distance > 0 && distance <= _sightConeLength)
+                    if (distanceSquared > 0.01f && distanceSquared <= sightConeLengthSquared)
                     {
                         dir.Normalize();
                         
@@ -946,6 +1106,7 @@ namespace Project9
                         
                         if (crossLeft >= 0 && crossRight >= 0)
                         {
+                            float distance = (float)Math.Sqrt(distanceSquared); // Calculate when needed
                             float alpha = 1.0f - (distance / _sightConeLength) * 0.5f;
                             byte alphaByte = (byte)(80 * alpha);
                             colorData[y * size + x] = new Color((byte)255, (byte)255, (byte)0, alphaByte);

@@ -292,22 +292,28 @@ namespace Project9
                     continue;
                 }
                 
-                // Skip updating distant idle enemies (unless they've detected the player)
+                // Skip updating distant idle enemies (unless they've detected the player or are returning to original position)
                 if (!enemy.HasDetectedPlayer)
                 {
-                    float distanceSquared = Vector2.DistanceSquared(playerPosition, enemy.Position);
-                    if (distanceSquared > ENEMY_UPDATE_RANGE_SQUARED)
+                    // Always update enemies that are not at their original positions (so they can return home)
+                    bool atOriginalPosition = enemy.IsAtOriginalPosition();
+                    if (atOriginalPosition)
                     {
-                        continue; // Skip updating this enemy - too far away
+                        float distanceSquared = Vector2.DistanceSquared(playerPosition, enemy.Position);
+                        if (distanceSquared > ENEMY_UPDATE_RANGE_SQUARED)
+                        {
+                            continue; // Skip updating this enemy - too far away and already at home
+                        }
                     }
+                    // If not at original position, always update so enemy can return home
                 }
                 
                 // Capture enemy position for collision checking (to exclude self from collision)
                 Vector2 enemyCurrentPos = enemy.Position;
                 
-                // Create terrain-only collision check for pathfinding (like player)
+                // Create terrain-only collision check for pathfinding (same as player uses)
                 // Enemy collision will be handled during movement via MoveWithCollision sliding
-                Func<Vector2, bool> terrainOnlyCheck = (pos) => _collisionManager.CheckCollision(pos, false);
+                Func<Vector2, bool> terrainOnlyCheck = (pos) => _collisionManager.CheckMovementCollision(pos);
                 
                 enemy.Update(
                     playerPosition, // Use cached position
