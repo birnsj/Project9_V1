@@ -90,6 +90,36 @@ namespace Project9.Editor
         public EditorCamera Camera => _camera;
         public EditorMapData MapData => _mapData;
 
+        /// <summary>
+        /// Event raised when an enemy is right-clicked
+        /// </summary>
+        public event EventHandler<EnemyRightClickedEventArgs>? EnemyRightClicked;
+
+        protected virtual void OnEnemyRightClicked(EnemyData enemy)
+        {
+            EnemyRightClicked?.Invoke(this, new EnemyRightClickedEventArgs(enemy));
+        }
+        
+        /// <summary>
+        /// Event raised when the player is right-clicked
+        /// </summary>
+        public event EventHandler<PlayerRightClickedEventArgs>? PlayerRightClicked;
+
+        protected virtual void OnPlayerRightClicked(PlayerData player)
+        {
+            PlayerRightClicked?.Invoke(this, new PlayerRightClickedEventArgs(player));
+        }
+        
+        /// <summary>
+        /// Event raised when a camera is right-clicked
+        /// </summary>
+        public event EventHandler<CameraRightClickedEventArgs>? CameraRightClicked;
+
+        protected virtual void OnCameraRightClicked(CameraData camera, int index)
+        {
+            CameraRightClicked?.Invoke(this, new CameraRightClickedEventArgs(camera, index));
+        }
+
         public MapRenderControl()
         {
             _camera = new EditorCamera();
@@ -117,7 +147,7 @@ namespace Project9.Editor
             this.SetStyle(ControlStyles.Selectable, true);
             this.TabStop = true;
             this.MouseEnter += MapRenderControl_MouseEnter;
-            this.BackColor = Color.Black;
+            this.BackColor = Color.FromArgb(240, 240, 240); // Light grey to match editor form
         }
 
         private void MapRenderControl_MouseEnter(object? sender, EventArgs e)
@@ -648,10 +678,11 @@ namespace Project9.Editor
             }
             else if (e.Button == MouseButtons.Right)
             {
+                PointF worldPos = ScreenToWorld(e.Location);
+                
                 // Right click: Delete collision cell (only in collision mode)
                 if (_collisionMode)
                 {
-                    PointF worldPos = ScreenToWorld(e.Location);
                     PointF snappedPos = SnapToGrid(worldPos);
                     
                     // Find and remove collision cell at this position
@@ -663,6 +694,56 @@ namespace Project9.Editor
                         _collisionCells.Remove(existingCell);
                         SaveCollisionCells();
                         Invalidate();
+                    }
+                }
+                else
+                {
+                    // Right click on player: Open properties window
+                    if (_mapData.MapData.Player != null)
+                    {
+                        float playerScreenX = _mapData.MapData.Player.X;
+                        float playerScreenY = _mapData.MapData.Player.Y;
+                        float distance = (float)Math.Sqrt(Math.Pow(worldPos.X - playerScreenX, 2) + Math.Pow(worldPos.Y - playerScreenY, 2));
+                        if (distance < 50) // Click radius
+                        {
+                            OnPlayerRightClicked(_mapData.MapData.Player);
+                            return;
+                        }
+                    }
+                    
+                    // Right click on camera: Open properties window
+                    for (int i = 0; i < _mapData.MapData.Cameras.Count; i++)
+                    {
+                        var camera = _mapData.MapData.Cameras[i];
+                        float cameraScreenX = camera.X;
+                        float cameraScreenY = camera.Y;
+                        float distance = (float)Math.Sqrt(Math.Pow(worldPos.X - cameraScreenX, 2) + Math.Pow(worldPos.Y - cameraScreenY, 2));
+                        if (distance < 50) // Click radius
+                        {
+                            OnCameraRightClicked(camera, i);
+                            return;
+                        }
+                    }
+                    
+                    // Right click on enemy: Open properties window
+                    // Check if clicking on any enemy
+                    EnemyData? clickedEnemy = null;
+                    foreach (var enemy in _mapData.MapData.Enemies)
+                    {
+                        float enemyScreenX = enemy.X;
+                        float enemyScreenY = enemy.Y;
+                        float distance = (float)Math.Sqrt(Math.Pow(worldPos.X - enemyScreenX, 2) + Math.Pow(worldPos.Y - enemyScreenY, 2));
+                        if (distance < 50) // Click radius
+                        {
+                            clickedEnemy = enemy;
+                            break;
+                        }
+                    }
+                    
+                    // Raise event for enemy right-click
+                    if (clickedEnemy != null)
+                    {
+                        OnEnemyRightClicked(clickedEnemy);
                     }
                 }
             }
@@ -1160,8 +1241,16 @@ namespace Project9.Editor
                 g.DrawPolygon(pen, diamondPoints);
             }
             
-            // Draw label above the enemy
-            string label = $"Enemy {index}";
+            // Draw label above the enemy - use name from JSON if available, otherwise use index
+            string label;
+            if (!string.IsNullOrWhiteSpace(enemy.Name))
+            {
+                label = enemy.Name;
+            }
+            else
+            {
+                label = $"Enemy {index}";
+            }
             using (Font font = new Font("Arial", 10, FontStyle.Bold))
             using (SolidBrush textBrush = new SolidBrush(Color.White))
             using (SolidBrush backgroundBrush = new SolidBrush(Color.FromArgb(200, Color.Black)))
@@ -1216,8 +1305,16 @@ namespace Project9.Editor
                 g.DrawPolygon(pen, diamondPoints);
             }
             
-            // Draw label above the player
-            string label = "Player";
+            // Draw label above the player - use name from JSON if available
+            string label;
+            if (!string.IsNullOrWhiteSpace(player.Name))
+            {
+                label = player.Name;
+            }
+            else
+            {
+                label = "Player";
+            }
             using (Font font = new Font("Arial", 10, FontStyle.Bold))
             using (SolidBrush textBrush = new SolidBrush(Color.White))
             using (SolidBrush backgroundBrush = new SolidBrush(Color.FromArgb(200, Color.Black)))
@@ -1283,8 +1380,16 @@ namespace Project9.Editor
                 g.DrawLine(conePen, centerX, centerY, endX, endY);
             }
             
-            // Draw label above the camera
-            string label = $"Camera {index}";
+            // Draw label above the camera - use name from JSON if available, otherwise use index
+            string label;
+            if (!string.IsNullOrWhiteSpace(camera.Name))
+            {
+                label = camera.Name;
+            }
+            else
+            {
+                label = $"Camera {index}";
+            }
             using (Font font = new Font("Arial", 10, FontStyle.Bold))
             using (SolidBrush textBrush = new SolidBrush(Color.White))
             using (SolidBrush backgroundBrush = new SolidBrush(Color.FromArgb(200, Color.Black)))

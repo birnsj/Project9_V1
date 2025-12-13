@@ -8,6 +8,9 @@ namespace Project9
 {
     public class Enemy : Entity
     {
+        // Reference to EnemyData for property editing
+        internal Project9.Shared.EnemyData? _enemyData;
+        
         // Enemy-specific fields (AI behavior)
         private Vector2 _originalPosition;
         private float _attackRange;
@@ -25,12 +28,13 @@ namespace Project9
         private Vector2 _searchTarget;
         private float _searchTimer = 0.0f;
         private bool _previouslyHadLineOfSight = false; // Track if we had line of sight previously
-        private const float SEARCH_DURATION = GameConfig.EnemySearchDuration;
-        private const float SEARCH_RADIUS = GameConfig.EnemySearchRadius;
+        private float _searchDuration;
+        private float _searchRadius;
         
         // Chase behavior - track how long player has been out of range
         private float _outOfRangeTimer = 0.0f;
-        private const float OUT_OF_RANGE_THRESHOLD = 3.0f; // Stop chasing after 3 seconds out of range
+        private float _outOfRangeThreshold;
+        private float _maxChaseRange;
         
         // Death animation
         private float _deathPulseTimer = 0.0f;
@@ -132,26 +136,95 @@ namespace Project9
         }
 
         public Enemy(Vector2 startPosition) 
-            : base(startPosition, Color.DarkRed, GameConfig.EnemyChaseSpeed, GameConfig.EnemyChaseSpeed, maxHealth: 50f)
+            : this(startPosition, null)
         {
+        }
+        
+        public Enemy(Vector2 startPosition, Project9.Shared.EnemyData? enemyData) 
+            : base(startPosition, Color.DarkRed, 
+                  enemyData?.ChaseSpeed ?? GameConfig.EnemyChaseSpeed, 
+                  enemyData?.ChaseSpeed ?? GameConfig.EnemyChaseSpeed, 
+                  maxHealth: enemyData?.MaxHealth ?? 50f)
+        {
+            _enemyData = enemyData;
             _originalPosition = startPosition;
-            _attackRange = GameConfig.EnemyAttackRange;
-            _detectionRange = GameConfig.EnemyDetectionRange;
-            _attackCooldown = GameConfig.EnemyAttackCooldown;
+            _attackRange = enemyData?.AttackRange ?? GameConfig.EnemyAttackRange;
+            _detectionRange = enemyData?.DetectionRange ?? GameConfig.EnemyDetectionRange;
+            _attackCooldown = enemyData?.AttackCooldown ?? GameConfig.EnemyAttackCooldown;
             _currentAttackCooldown = 0.0f;
             _isAttacking = false;
             _hasDetectedPlayer = false;
             
             // Initialize rotation and sight cone
             _random = new Random();
+            if (enemyData != null && enemyData.InitialRotation >= 0)
+            {
+                _rotation = enemyData.InitialRotation;
+            }
+            else
+            {
             _rotation = (float)(_random.NextDouble() * Math.PI * 2);
-            _sightConeAngle = MathHelper.ToRadians(60);
+            }
+            
+            _sightConeAngle = MathHelper.ToRadians(enemyData?.SightConeAngle ?? 60.0f);
+            
+            if (enemyData != null && enemyData.SightConeLength > 0)
+            {
+                _sightConeLength = enemyData.SightConeLength;
+            }
+            else
+            {
             _sightConeLength = _detectionRange * 0.8f;
-            _rotationSpeed = MathHelper.ToRadians(45);
+            }
+            
+            _rotationSpeed = MathHelper.ToRadians(enemyData?.RotationSpeed ?? 45.0f);
+            _exclamationDuration = enemyData?.ExclamationDuration ?? GameConfig.EnemyExclamationDuration;
+            _searchDuration = enemyData?.SearchDuration ?? GameConfig.EnemySearchDuration;
+            _searchRadius = enemyData?.SearchRadius ?? GameConfig.EnemySearchRadius;
+            _outOfRangeThreshold = enemyData?.OutOfRangeThreshold ?? 3.0f;
+            _maxChaseRange = enemyData?.MaxChaseRange ?? GameConfig.EnemyMaxChaseRange;
             _behaviorTimer = 0.0f;
             _behaviorChangeInterval = 2.0f + (float)(_random.NextDouble() * 3.0f);
             _isRotating = _random.Next(2) == 0;
             _exclamationTimer = 0.0f;
+        }
+        
+        /// <summary>
+        /// Update properties from EnemyData (called when properties are edited in editor)
+        /// </summary>
+        public void UpdateFromEnemyData()
+        {
+            if (_enemyData == null) return;
+            
+            // Update runtime values from EnemyData
+            _attackRange = _enemyData.AttackRange;
+            _detectionRange = _enemyData.DetectionRange;
+            _attackCooldown = _enemyData.AttackCooldown;
+            _walkSpeed = _enemyData.ChaseSpeed;
+            _runSpeed = _enemyData.ChaseSpeed;
+            _maxHealth = _enemyData.MaxHealth;
+            _sightConeAngle = MathHelper.ToRadians(_enemyData.SightConeAngle);
+            
+            if (_enemyData.SightConeLength > 0)
+            {
+                _sightConeLength = _enemyData.SightConeLength;
+            }
+            else
+            {
+                _sightConeLength = _detectionRange * 0.8f;
+            }
+            
+            _rotationSpeed = MathHelper.ToRadians(_enemyData.RotationSpeed);
+            _exclamationDuration = _enemyData.ExclamationDuration;
+            _searchDuration = _enemyData.SearchDuration;
+            _searchRadius = _enemyData.SearchRadius;
+            _outOfRangeThreshold = _enemyData.OutOfRangeThreshold;
+            _maxChaseRange = _enemyData.MaxChaseRange;
+            
+            if (_enemyData.InitialRotation >= 0)
+            {
+                _rotation = _enemyData.InitialRotation;
+            }
         }
         
         /// <summary>
@@ -302,11 +375,11 @@ namespace Project9
             {
                 // Player lost - start searching (we had line of sight before, now we don't)
                 _isSearching = true;
-                _searchTimer = SEARCH_DURATION;
+                _searchTimer = _searchDuration;
                 _lastKnownPlayerPosition = playerPosition;
                 // Set first search target near last known position
                 float randomAngle = (float)(_random.NextDouble() * Math.PI * 2);
-                float randomDistance = (float)(_random.NextDouble() * SEARCH_RADIUS);
+                float randomDistance = (float)(_random.NextDouble() * _searchRadius);
                 _searchTarget = _lastKnownPlayerPosition + new Vector2(
                     (float)Math.Cos(randomAngle) * randomDistance,
                     (float)Math.Sin(randomAngle) * randomDistance
@@ -332,7 +405,7 @@ namespace Project9
             // If enemy has detected player (either directly or via camera alert), chase them
             // Use a large chase range when alerted (1024 pixels, same as camera alert radius)
             // During alarm, enemies should chase even without direct line of sight
-            const float maxChaseRange = GameConfig.EnemyMaxChaseRange;
+            float maxChaseRange = _maxChaseRange;
             
             // If alarm is active, enemies chase even without line of sight
             // Otherwise, they need line of sight to chase
@@ -362,7 +435,7 @@ namespace Project9
             }
             
             // Continue chasing if player is in range and visible, OR if within 3 second grace period
-            bool withinGracePeriod = _outOfRangeTimer < OUT_OF_RANGE_THRESHOLD;
+            bool withinGracePeriod = _outOfRangeTimer < _outOfRangeThreshold;
             bool shouldChase = _hasDetectedPlayer && !_isSearching && (shouldChaseImmediate || withinGracePeriod);
             
             // Debug logging
@@ -404,7 +477,7 @@ namespace Project9
                 _isAttacking = false;
                 SearchBehavior(deltaTime, checkCollision, collisionManager, checkTerrainOnly);
             }
-            else if (_hasDetectedPlayer && _outOfRangeTimer >= OUT_OF_RANGE_THRESHOLD)
+            else if (_hasDetectedPlayer && _outOfRangeTimer >= _outOfRangeThreshold)
             {
                 // Player has been out of range for 3 seconds, return to original position
                 _isAttacking = false;
@@ -553,7 +626,7 @@ namespace Project9
             {
                 // Reached search target - pick a new random search point
                 float randomAngle = (float)(_random.NextDouble() * Math.PI * 2);
-                float randomDistance = (float)(_random.NextDouble() * SEARCH_RADIUS);
+                float randomDistance = (float)(_random.NextDouble() * _searchRadius);
                 _searchTarget = _lastKnownPlayerPosition + new Vector2(
                     (float)Math.Cos(randomAngle) * randomDistance,
                     (float)Math.Sin(randomAngle) * randomDistance

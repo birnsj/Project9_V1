@@ -27,6 +27,9 @@ namespace Project9.Editor
         private TrackBar? _opacitySlider = null;
         private ComfyUISettings _comfyUISettings = null!;
         private ComfyUIServerManager? _autoStartedServerManager = null;
+        private EnemyPropertiesWindow? _enemyPropertiesWindow;
+        private PlayerPropertiesWindow? _playerPropertiesWindow;
+        private CameraPropertiesWindow? _cameraPropertiesWindow;
 
         public EditorForm()
         {
@@ -54,6 +57,7 @@ namespace Project9.Editor
             this.Text = "Tile Editor";
             this.Size = new Size(1200, 800);
             this.WindowState = FormWindowState.Maximized;
+            this.BackColor = Color.FromArgb(240, 240, 240); // Light grey background
 
             // Menu Strip
             _menuStrip = new MenuStrip();
@@ -89,6 +93,15 @@ namespace Project9.Editor
             toolsMenu.DropDownItems.Add(comfyUISettingsMenuItem);
             
             _menuStrip.Items.Add(toolsMenu);
+            
+            // View Menu
+            ToolStripMenuItem viewMenu = new ToolStripMenuItem("View");
+            
+            ToolStripMenuItem propertiesWindowMenuItem = new ToolStripMenuItem("Enemy Properties");
+            propertiesWindowMenuItem.Click += PropertiesWindowMenuItem_Click;
+            viewMenu.DropDownItems.Add(propertiesWindowMenuItem);
+            
+            _menuStrip.Items.Add(viewMenu);
             
             // About Menu
             ToolStripMenuItem aboutMenu = new ToolStripMenuItem("About");
@@ -211,17 +224,32 @@ namespace Project9.Editor
             _statusStrip.Items.Add(_zoomLabel);
             _statusStrip.Items.Add(_comfyUIStatusLabel);
 
-            // Layout
+            // Layout (order matters for z-ordering)
+            // Add controls in reverse order of desired z-order (last added is on top)
             this.Controls.Add(_mapRenderControl);
             this.Controls.Add(_toolStrip);
             this.Controls.Add(_statusStrip);
             this.Controls.Add(_menuStrip);
+            
+            // Properties window will be added as a child form when docked
+            
+            // Subscribe to form resize to adjust map control when properties window is docked
+            this.Resize += EditorForm_Resize;
 
             // Update selected button
             UpdateSelectedTileButton(TerrainType.Grass);
 
             this.ResumeLayout(false);
             this.PerformLayout();
+        }
+        
+        private void EditorForm_Resize(object? sender, EventArgs e)
+        {
+            // Adjust map control if properties window is docked
+            if (_enemyPropertiesWindow != null && _enemyPropertiesWindow.IsDocked)
+            {
+                AdjustMapControlForDockedWindow();
+            }
         }
 
         private async void InitializeEditor()
@@ -247,6 +275,13 @@ namespace Project9.Editor
             
             // Initialize map render control
             _mapRenderControl.Initialize(_mapData, _textureLoader);
+            
+            // Subscribe to enemy right-click event
+            _mapRenderControl.EnemyRightClicked += MapRenderControl_EnemyRightClicked;
+            // Subscribe to player right-click event
+            _mapRenderControl.PlayerRightClicked += MapRenderControl_PlayerRightClicked;
+            // Subscribe to camera right-click event
+            _mapRenderControl.CameraRightClicked += MapRenderControl_CameraRightClicked;
             
             // Force a redraw after initialization
             _mapRenderControl.Invalidate();
@@ -455,6 +490,211 @@ namespace Project9.Editor
         private void AboutMenu_Click(object? sender, EventArgs e)
         {
             MessageBox.Show("Project 9 V002", "About", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void MapRenderControl_EnemyRightClicked(object? sender, EnemyRightClickedEventArgs e)
+        {
+            // Create or show properties window
+            if (_enemyPropertiesWindow == null || _enemyPropertiesWindow.IsDisposed)
+            {
+                _enemyPropertiesWindow = new EnemyPropertiesWindow();
+                _enemyPropertiesWindow.SetSaveCallback(() => SaveEnemyProperties());
+                _enemyPropertiesWindow.Owner = this;
+                _enemyPropertiesWindow.SetParentForm(this);
+                
+                // Subscribe to docking changes to adjust map control
+                _enemyPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+            }
+
+            // Set the selected enemy
+            _enemyPropertiesWindow.CurrentEnemy = e.Enemy;
+            
+            // Show the window (bring to front if already visible)
+            if (!_enemyPropertiesWindow.Visible)
+            {
+                // Center the window on the editor form
+                CenterWindowOnEditor(_enemyPropertiesWindow);
+                _enemyPropertiesWindow.Show();
+            }
+            else
+            {
+                _enemyPropertiesWindow.BringToFront();
+            }
+        }
+
+        private void PropertiesWindowMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_enemyPropertiesWindow == null || _enemyPropertiesWindow.IsDisposed)
+            {
+                _enemyPropertiesWindow = new EnemyPropertiesWindow();
+                _enemyPropertiesWindow.SetSaveCallback(() => SaveEnemyProperties());
+                _enemyPropertiesWindow.Owner = this;
+                _enemyPropertiesWindow.SetParentForm(this);
+                
+                // Subscribe to docking changes
+                _enemyPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+            }
+
+            if (_enemyPropertiesWindow.Visible)
+            {
+                _enemyPropertiesWindow.Hide();
+            }
+            else
+            {
+                // Center the window on the editor form
+                CenterWindowOnEditor(_enemyPropertiesWindow);
+                _enemyPropertiesWindow.Show();
+            }
+        }
+
+        /// <summary>
+        /// Centers a form window on the editor form
+        /// </summary>
+        private void CenterWindowOnEditor(Form window)
+        {
+            if (window == null || this.IsDisposed) return;
+            
+            // Calculate center position relative to the editor form
+            int centerX = this.Left + (this.Width - window.Width) / 2;
+            int centerY = this.Top + (this.Height - window.Height) / 2;
+            
+            // Ensure the window stays on screen
+            Screen screen = Screen.FromControl(this);
+            centerX = Math.Max(screen.WorkingArea.Left, Math.Min(centerX, screen.WorkingArea.Right - window.Width));
+            centerY = Math.Max(screen.WorkingArea.Top, Math.Min(centerY, screen.WorkingArea.Bottom - window.Height));
+            
+            window.StartPosition = FormStartPosition.Manual;
+            window.Location = new Point(centerX, centerY);
+        }
+
+        private void AdjustMapControlForDockedWindow()
+        {
+            // Check if any properties window is docked
+            bool enemyWindowDocked = _enemyPropertiesWindow != null && _enemyPropertiesWindow.IsDocked;
+            bool playerWindowDocked = _playerPropertiesWindow != null && _playerPropertiesWindow.IsDocked;
+            bool cameraWindowDocked = _cameraPropertiesWindow != null && _cameraPropertiesWindow.IsDocked;
+            
+            if (!enemyWindowDocked && !playerWindowDocked && !cameraWindowDocked)
+            {
+                // No windows docked - map control fills the form
+                _mapRenderControl.Dock = DockStyle.Fill;
+                return;
+            }
+            
+            // Window is docked vertically on the right - adjust map control width
+            int menuStripHeight = _menuStrip?.Height ?? 0;
+            int toolStripHeight = _toolStrip?.Height ?? 0;
+            int statusStripHeight = _statusStrip?.Height ?? 0;
+            int topPosition = menuStripHeight + toolStripHeight;
+            int bottomPosition = this.ClientSize.Height - statusStripHeight;
+            
+            // Properties window is 300px wide when docked
+            int propertiesWindowWidth = 300;
+            
+            _mapRenderControl.Dock = DockStyle.None;
+            _mapRenderControl.Location = new Point(0, topPosition);
+            _mapRenderControl.Width = this.ClientSize.Width - propertiesWindowWidth;
+            _mapRenderControl.Height = bottomPosition - topPosition;
+            _mapRenderControl.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom;
+        }
+
+        private void MapRenderControl_PlayerRightClicked(object? sender, PlayerRightClickedEventArgs e)
+        {
+            // Create or show properties window
+            if (_playerPropertiesWindow == null || _playerPropertiesWindow.IsDisposed)
+            {
+                _playerPropertiesWindow = new PlayerPropertiesWindow();
+                _playerPropertiesWindow.SetSaveCallback(() => SavePlayerProperties());
+                _playerPropertiesWindow.Owner = this;
+                _playerPropertiesWindow.SetParentForm(this);
+                
+                // Subscribe to docking changes
+                _playerPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+            }
+
+            // Set the selected player
+            _playerPropertiesWindow.CurrentPlayer = e.Player;
+            
+            // Show the window (bring to front if already visible)
+            if (!_playerPropertiesWindow.Visible)
+            {
+                // Center the window on the editor form
+                CenterWindowOnEditor(_playerPropertiesWindow);
+                _playerPropertiesWindow.Show();
+            }
+            else
+            {
+                _playerPropertiesWindow.BringToFront();
+            }
+        }
+
+        private async void SaveEnemyProperties()
+        {
+            try
+            {
+                await _mapData.SaveAsync();
+                _mapRenderControl?.Invalidate(); // Refresh the view to show updated positions/properties
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving enemy properties: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        
+        private async void SavePlayerProperties()
+        {
+            try
+            {
+                await _mapData.SaveAsync();
+                _mapRenderControl?.Invalidate(); // Refresh the view to show updated positions/properties
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving player properties: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        
+        private void MapRenderControl_CameraRightClicked(object? sender, CameraRightClickedEventArgs e)
+        {
+            // Create or show properties window
+            if (_cameraPropertiesWindow == null || _cameraPropertiesWindow.IsDisposed)
+            {
+                _cameraPropertiesWindow = new CameraPropertiesWindow();
+                _cameraPropertiesWindow.SetSaveCallback(() => SaveCameraProperties());
+                _cameraPropertiesWindow.Owner = this;
+                _cameraPropertiesWindow.SetParentForm(this);
+                
+                // Subscribe to docking changes
+                _cameraPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+            }
+
+            // Set the selected camera
+            _cameraPropertiesWindow.CurrentCamera = e.Camera;
+            
+            // Show the window (bring to front if already visible)
+            if (!_cameraPropertiesWindow.Visible)
+            {
+                // Center the window on the editor form
+                CenterWindowOnEditor(_cameraPropertiesWindow);
+                _cameraPropertiesWindow.Show();
+            }
+            else
+            {
+                _cameraPropertiesWindow.BringToFront();
+            }
+        }
+        
+        private async void SaveCameraProperties()
+        {
+            try
+            {
+                await _mapData.SaveAsync();
+                _mapRenderControl?.Invalidate(); // Refresh the view to show updated positions/properties
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving camera properties: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void ShowGridCheckBox_CheckedChanged(object? sender, EventArgs e)

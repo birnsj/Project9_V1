@@ -85,15 +85,17 @@ namespace Project9
 
             // Initialize player
             Vector2 playerPosition;
+            Project9.Shared.PlayerData? playerData = null;
             if (_map.MapData?.Player != null)
             {
-                playerPosition = new Vector2(_map.MapData.Player.X, _map.MapData.Player.Y);
+                playerData = _map.MapData.Player;
+                playerPosition = new Vector2(playerData.X, playerData.Y);
             }
             else
             {
                 playerPosition = _map.GetMapCenter();
             }
-            Player player = new Player(playerPosition);
+            Player player = new Player(playerPosition, playerData);
 
             // Initialize managers
             // Create EntityManager first (without CollisionManager)

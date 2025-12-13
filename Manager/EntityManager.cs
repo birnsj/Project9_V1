@@ -76,7 +76,7 @@ namespace Project9
                 foreach (var enemyData in mapData.Enemies)
                 {
                     Vector2 enemyPosition = new Vector2(enemyData.X, enemyData.Y);
-                    _enemies.Add(new Enemy(enemyPosition));
+                    _enemies.Add(new Enemy(enemyPosition, enemyData));
                 }
                 Console.WriteLine($"[EntityManager] Loaded {_enemies.Count} enemies");
             }
@@ -93,8 +93,7 @@ namespace Project9
             {
                 foreach (var cameraData in mapData.Cameras)
                 {
-                    Vector2 cameraPosition = new Vector2(cameraData.X, cameraData.Y);
-                    _cameras.Add(new SecurityCamera(cameraPosition, cameraData.Rotation, cameraData.DetectionRange, cameraData.SightConeAngle));
+                    _cameras.Add(new SecurityCamera(cameraData));
                 }
                 Console.WriteLine($"[EntityManager] Loaded {_cameras.Count} cameras");
             }
@@ -126,6 +125,14 @@ namespace Project9
             }
             
             return closestCombatEnemy;
+        }
+
+        /// <summary>
+        /// Check if the player is currently in combat
+        /// </summary>
+        public bool IsPlayerInCombat()
+        {
+            return GetEnemyInCombat() != null;
         }
 
         /// <summary>
@@ -392,10 +399,11 @@ namespace Project9
             // Make player face the enemy when attacking and keep facing during attack
             _player.SetAttackTarget(enemy.Position);
                 
-            enemy.TakeDamage(GameConfig.PlayerAttackDamage);
+            float attackDamage = _player._playerData?.AttackDamage ?? GameConfig.PlayerAttackDamage;
+            enemy.TakeDamage(attackDamage);
             if (_renderSystem != null)
             {
-                _renderSystem.ShowDamageNumber(enemy.Position, GameConfig.PlayerAttackDamage);
+                _renderSystem.ShowDamageNumber(enemy.Position, attackDamage);
             }
             LogOverlay.Log($"[EntityManager] Player attacked enemy! Enemy health: {enemy.CurrentHealth:F1}/{enemy.MaxHealth:F1}", LogLevel.Info);
             

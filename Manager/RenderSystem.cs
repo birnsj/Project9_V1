@@ -293,6 +293,12 @@ namespace Project9
             // Draw damage numbers in world space (before ending world space rendering)
             DrawDamageNumbersWorldSpace(_spriteBatch);
 
+            // Draw name tags when hovering over entities (only if not in combat)
+            if (!entityManager.IsPlayerInCombat())
+            {
+                DrawNameTags(_spriteBatch, entityManager);
+            }
+
             _spriteBatch.End();
 
             // Screen space rendering (UI)
@@ -1008,6 +1014,170 @@ namespace Project9
                 spriteBatch.DrawString(_uiFont, damageText, textPos + new Vector2(2, 2), new Color((byte)0, (byte)0, (byte)0, shadowAlpha));
                 spriteBatch.DrawString(_uiFont, damageText, textPos, textColor);
             }
+        }
+
+        /// <summary>
+        /// Draw name tags above entities when mouse is hovering over them (only when not in combat)
+        /// </summary>
+        private void DrawNameTags(SpriteBatch spriteBatch, EntityManager entityManager)
+        {
+            if (_uiFont == null)
+                return;
+
+            // Get mouse position in world coordinates
+            Microsoft.Xna.Framework.Input.MouseState mouseState = Microsoft.Xna.Framework.Input.Mouse.GetState();
+            Vector2 mouseScreenPos = new Vector2(mouseState.X, mouseState.Y);
+            Vector2 mouseWorldPos = ScreenToWorld(mouseScreenPos);
+
+            const float hoverRadius = 50.0f; // Distance threshold for hover detection
+            const float nameTagOffsetY = -50.0f; // Position above entity
+
+            // Check enemies
+            foreach (var enemy in entityManager.Enemies)
+            {
+                if (!enemy.IsAlive)
+                    continue;
+
+                float distance = Vector2.Distance(mouseWorldPos, enemy.Position);
+                if (distance <= hoverRadius)
+                {
+                    string name = enemy._enemyData?.Name ?? "Enemy";
+                    if (string.IsNullOrWhiteSpace(name))
+                        name = "Enemy";
+                    
+                    DrawNameTag(spriteBatch, enemy.Position + new Vector2(0, nameTagOffsetY), name, Color.Orange);
+                    return; // Only show one name tag at a time
+                }
+            }
+
+            // Check cameras
+            foreach (var camera in entityManager.Cameras)
+            {
+                float distance = Vector2.Distance(mouseWorldPos, camera.Position);
+                if (distance <= hoverRadius)
+                {
+                    string name = camera._cameraData?.Name ?? "Camera";
+                    if (string.IsNullOrWhiteSpace(name))
+                        name = "Camera";
+                    
+                    DrawNameTag(spriteBatch, camera.Position + new Vector2(0, nameTagOffsetY), name, Color.LightBlue);
+                    return; // Only show one name tag at a time
+                }
+            }
+
+            // Check player
+            if (entityManager.Player.IsAlive)
+            {
+                float distance = Vector2.Distance(mouseWorldPos, entityManager.Player.Position);
+                if (distance <= hoverRadius)
+                {
+                    string name = entityManager.Player._playerData?.Name ?? "Player";
+                    if (string.IsNullOrWhiteSpace(name))
+                        name = "Player";
+                    
+                    DrawNameTag(spriteBatch, entityManager.Player.Position + new Vector2(0, nameTagOffsetY), name, Color.LightGreen);
+                    return; // Only show one name tag at a time
+                }
+            }
+        }
+
+        /// <summary>
+        /// Draw a single name tag at the specified world position
+        /// </summary>
+        private void DrawNameTag(SpriteBatch spriteBatch, Vector2 worldPosition, string name, Color nameColor)
+        {
+            if (_uiFont == null)
+                return;
+
+            // Measure text size
+            Vector2 textSize = _uiFont.MeasureString(name);
+            
+            // Calculate text position (centered above entity)
+            Vector2 textPos = worldPosition - new Vector2(textSize.X / 2.0f, textSize.Y / 2.0f);
+            
+            // Create background texture if needed
+            if (_healthBarForegroundTexture == null)
+            {
+                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _healthBarForegroundTexture.SetData(new[] { Color.White });
+            }
+            
+            // Draw background rectangle (semi-transparent dark background)
+            const float padding = 6.0f;
+            Vector2 bgPos = textPos - new Vector2(padding, padding);
+            Vector2 bgSize = textSize + new Vector2(padding * 2, padding * 2);
+            
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                bgPos,
+                null,
+                new Color(0, 0, 0, 180), // Semi-transparent black
+                0f,
+                Vector2.Zero,
+                bgSize,
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Draw border
+            const float borderThickness = 1.0f;
+            Color borderColor = new Color(nameColor.R, nameColor.G, nameColor.B, (byte)200);
+            
+            // Top border
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                bgPos,
+                null,
+                borderColor,
+                0f,
+                Vector2.Zero,
+                new Vector2(bgSize.X, borderThickness),
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Bottom border
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                bgPos + new Vector2(0, bgSize.Y - borderThickness),
+                null,
+                borderColor,
+                0f,
+                Vector2.Zero,
+                new Vector2(bgSize.X, borderThickness),
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Left border
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                bgPos,
+                null,
+                borderColor,
+                0f,
+                Vector2.Zero,
+                new Vector2(borderThickness, bgSize.Y),
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Right border
+            spriteBatch.Draw(
+                _healthBarForegroundTexture,
+                bgPos + new Vector2(bgSize.X - borderThickness, 0),
+                null,
+                borderColor,
+                0f,
+                Vector2.Zero,
+                new Vector2(borderThickness, bgSize.Y),
+                SpriteEffects.None,
+                0f
+            );
+            
+            // Draw text with shadow for better visibility
+            spriteBatch.DrawString(_uiFont, name, textPos + new Vector2(1, 1), new Color(0, 0, 0, 200));
+            spriteBatch.DrawString(_uiFont, name, textPos, nameColor);
         }
         
         private void DrawDamageNumbers(SpriteBatch spriteBatch)

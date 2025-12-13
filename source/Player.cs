@@ -44,14 +44,35 @@ namespace Project9
             set => _runSpeed = value;
         }
 
-        public Player(Vector2 startPosition) 
-            : base(startPosition, Color.Red, GameConfig.PlayerWalkSpeed, GameConfig.PlayerRunSpeed, maxHealth: 100f)
+        internal Project9.Shared.PlayerData? _playerData;
+        
+        public Player(Vector2 startPosition, Project9.Shared.PlayerData? playerData = null) 
+            : base(startPosition, Color.Red, 
+                   playerData?.WalkSpeed ?? GameConfig.PlayerWalkSpeed, 
+                   playerData?.RunSpeed ?? GameConfig.PlayerRunSpeed, 
+                   maxHealth: playerData?.MaxHealth ?? 100f)
         {
-            _sneakSpeed = _walkSpeed * GameConfig.PlayerSneakSpeedMultiplier;
+            _playerData = playerData;
+            _sneakSpeed = _walkSpeed * (playerData?.SneakSpeedMultiplier ?? GameConfig.PlayerSneakSpeedMultiplier);
             _sneakColor = Color.Purple;
             _isSneaking = false;
-            _rotation = 0.0f; // Initialize facing direction
+            _rotation = playerData?.Rotation ?? 0.0f; // Initialize facing direction
             _spawnPosition = startPosition; // Store spawn position for respawn
+            _deathPulseSpeed = playerData?.DeathPulseSpeed ?? 2.0f;
+        }
+        
+        public void UpdateFromPlayerData(Project9.Shared.PlayerData playerData)
+        {
+            _playerData = playerData;
+            _position = new Vector2(playerData.X, playerData.Y);
+            _spawnPosition = new Vector2(playerData.X, playerData.Y);
+            _walkSpeed = playerData.WalkSpeed;
+            _runSpeed = playerData.RunSpeed;
+            _maxHealth = playerData.MaxHealth;
+            _currentHealth = MathHelper.Clamp(_currentHealth, 0, _maxHealth);
+            _sneakSpeed = _walkSpeed * playerData.SneakSpeedMultiplier;
+            _rotation = playerData.Rotation;
+            _deathPulseSpeed = playerData.DeathPulseSpeed;
         }
         
         public float Rotation => _rotation;
@@ -296,7 +317,7 @@ namespace Project9
             if (!_isDead && !IsAlive)
             {
                 _isDead = true;
-                _respawnTimer = GameConfig.PlayerRespawnCountdown; // Start countdown
+                _respawnTimer = _playerData?.RespawnCountdown ?? GameConfig.PlayerRespawnCountdown; // Start countdown
                 ClearTarget(); // Stop movement when dead
             }
             
@@ -328,7 +349,7 @@ namespace Project9
             if (!_isDead && !IsAlive)
             {
                 _isDead = true;
-                _respawnTimer = GameConfig.PlayerRespawnCountdown; // Start countdown
+                _respawnTimer = _playerData?.RespawnCountdown ?? GameConfig.PlayerRespawnCountdown; // Start countdown
             }
             
             if (_isDead)
@@ -522,9 +543,10 @@ namespace Project9
                 // Determine speed with smooth deceleration
                 float baseSpeed = _isSneaking ? _sneakSpeed : _runSpeed;
                 
-                if (isFinalTarget && distanceToFinalTarget < GameConfig.PlayerSlowdownRadius)
+                float slowdownRadius = _playerData?.SlowdownRadius ?? GameConfig.PlayerSlowdownRadius;
+                if (isFinalTarget && distanceToFinalTarget < slowdownRadius)
                 {
-                    float slowdownFactor = distanceToFinalTarget / GameConfig.PlayerSlowdownRadius;
+                    float slowdownFactor = distanceToFinalTarget / slowdownRadius;
                     slowdownFactor = MathHelper.Max(slowdownFactor, 0.2f);
                     _currentSpeed = baseSpeed * slowdownFactor;
                 }
@@ -533,7 +555,11 @@ namespace Project9
                     _currentSpeed = baseSpeed;
                 }
 
-                float stopThreshold = isFinalTarget ? GameConfig.PlayerStopThreshold : (_isSneaking ? GameConfig.PlayerSneakStopThreshold : GameConfig.PlayerRunStopThreshold);
+                float stopThreshold = isFinalTarget 
+                    ? (_playerData?.StopThreshold ?? GameConfig.PlayerStopThreshold) 
+                    : (_isSneaking 
+                        ? (_playerData?.SneakStopThreshold ?? GameConfig.PlayerSneakStopThreshold) 
+                        : (_playerData?.RunStopThreshold ?? GameConfig.PlayerRunStopThreshold));
                 
                 if (distance <= stopThreshold && isFinalTarget && _targetPosition.HasValue)
                 {

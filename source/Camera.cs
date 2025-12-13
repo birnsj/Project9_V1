@@ -8,14 +8,15 @@ namespace Project9
     /// Security camera that detects player and alerts nearby enemies
     /// Note: This is SecurityCamera, not to be confused with ViewportCamera
     /// </summary>
-    public class SecurityCamera : Entity
+    public class SecurityCamera : Enemy
     {
-        private float _detectionRange;
-        private float _sightConeAngle;
+        internal Project9.Shared.CameraData? _cameraData;
+        
+        // Camera-specific fields (inherits detection range, sight cone angle, etc. from Enemy)
         private float _sightConeLength;
-        private float _rotation;
+        private float _cameraRotation; // Camera's own rotation (different from Enemy's rotation)
         private float _rotationSpeed;
-        private bool _hasDetectedPlayer;
+        private bool _cameraHasDetectedPlayer; // Camera's own detection state
         private float _alertRadius; // Radius to alert enemies
         private float _lastAlertTime;
         private float _alertCooldown;
@@ -26,15 +27,14 @@ namespace Project9
         private float _targetRotation; // Target rotation angle
         private bool _rotatingRight; // Direction of rotation
         private float _pauseTimer; // Timer for pause at endpoints
-        private const float SWEEP_ANGLE = 1.57079632679f; // 90 degrees (MathHelper.PiOver2)
-        private readonly float ROTATION_SPEED = MathHelper.ToRadians(30.0f); // 30 degrees per second
-        private const float PAUSE_DURATION = 1.5f; // Pause for 1.5 seconds at endpoints
+        private float _sweepAngle; // Sweep angle in radians
+        private float _pauseDuration; // Pause duration at endpoints
         
         // Rendering textures
         private Texture2D? _sightConeTexture;
         
-        public float Rotation => _rotation;
-        public bool HasDetectedPlayer => _hasDetectedPlayer;
+        public new float Rotation => _cameraRotation; // Hide Enemy's Rotation
+        public new bool HasDetectedPlayer => _cameraHasDetectedPlayer; // Hide Enemy's HasDetectedPlayer
         public float AlertRadius => _alertRadius;
         
         /// <summary>
@@ -45,7 +45,7 @@ namespace Project9
             Vector2 directionToPlayer = playerPosition - _position;
             float distanceToPlayer = directionToPlayer.Length();
             
-            float effectiveDetectionRange = playerIsSneaking ? _detectionRange * GameConfig.EnemySneakDetectionMultiplier : _detectionRange;
+            float effectiveDetectionRange = playerIsSneaking ? DetectionRange * GameConfig.EnemySneakDetectionMultiplier : DetectionRange;
             bool playerInRange = distanceToPlayer <= effectiveDetectionRange;
             
             if (!playerInRange)
@@ -57,33 +57,62 @@ namespace Project9
             return inSightCone && !lineOfSightBlocked;
         }
 
-        public SecurityCamera(Vector2 position, float rotation = 0.0f, float detectionRange = 300.0f, float sightConeAngleDegrees = 60.0f) 
-            : base(position, Color.Blue, 0.0f, 0.0f) // Cameras don't move
+        public SecurityCamera(Project9.Shared.CameraData cameraData) 
+            : base(new Vector2(cameraData.X, cameraData.Y), cameraData)
         {
-            _detectionRange = detectionRange;
-            // Make sight cone smaller - default to 40 degrees, but can be overridden
-            float actualConeAngle = sightConeAngleDegrees > 0 ? sightConeAngleDegrees : 40.0f;
-            _sightConeAngle = MathHelper.ToRadians(actualConeAngle);
-            _sightConeLength = _detectionRange;
+            _cameraData = cameraData;
+            // Override color to blue for cameras
+            _normalColor = Color.Blue;
+            _color = Color.Blue;
+            
+            // Initialize camera-specific properties from CameraData
+            float sweepAngleRad = MathHelper.ToRadians(cameraData.SweepAngle);
+            float rotationSpeedRad = MathHelper.ToRadians(cameraData.CameraRotationSpeed);
+            
             // Normalize base rotation to 0-2PI
-            _baseRotation = rotation;
+            _baseRotation = cameraData.Rotation;
             while (_baseRotation >= Math.PI * 2) _baseRotation -= (float)(Math.PI * 2);
             while (_baseRotation < 0) _baseRotation += (float)(Math.PI * 2);
             
-            _rotation = _baseRotation;
-            _targetRotation = _baseRotation + SWEEP_ANGLE;
+            _cameraRotation = _baseRotation;
+            _sweepAngle = sweepAngleRad;
+            _pauseDuration = cameraData.PauseDuration;
+            _targetRotation = _baseRotation + _sweepAngle;
             // Normalize target rotation
             while (_targetRotation >= Math.PI * 2) _targetRotation -= (float)(Math.PI * 2);
             while (_targetRotation < 0) _targetRotation += (float)(Math.PI * 2);
             
             _rotatingRight = true;
             _pauseTimer = 0.0f;
-            _rotationSpeed = ROTATION_SPEED;
+            _rotationSpeed = rotationSpeedRad;
             _random = new Random();
-            _hasDetectedPlayer = false;
-            _alertRadius = 1024.0f; // Alert enemies within 1024 pixels
+            _cameraHasDetectedPlayer = false;
+            _alertRadius = cameraData.AlertRadius;
             _lastAlertTime = -10.0f; // Start with negative value so first detection can trigger
-            _alertCooldown = 2.0f; // Cooldown between alerts (seconds)
+            _alertCooldown = cameraData.AlertCooldown;
+            
+            // Set sight cone length
+            if (cameraData.CameraSightConeLength > 0)
+            {
+                _sightConeLength = cameraData.CameraSightConeLength;
+            }
+            else
+            {
+                _sightConeLength = DetectionRange; // Use inherited detection range from Enemy
+            }
+        }
+        
+        // Legacy constructor for backward compatibility
+        public SecurityCamera(Vector2 position, float rotation = 0.0f, float detectionRange = 300.0f, float sightConeAngleDegrees = 60.0f) 
+            : this(new Project9.Shared.CameraData
+            {
+                X = position.X,
+                Y = position.Y,
+                Rotation = rotation,
+                DetectionRange = detectionRange,
+                SightConeAngle = sightConeAngleDegrees
+            })
+        {
         }
         
         /// <summary>
@@ -107,7 +136,7 @@ namespace Project9
             
             float pointAngle = (float)Math.Atan2(directionToPoint.Y, directionToPoint.X);
             
-            float cameraAngle = _rotation;
+            float cameraAngle = _cameraRotation;
             while (cameraAngle < 0) cameraAngle += (float)(Math.PI * 2);
             while (cameraAngle >= Math.PI * 2) cameraAngle -= (float)(Math.PI * 2);
             while (pointAngle < 0) pointAngle += (float)(Math.PI * 2);
@@ -117,7 +146,9 @@ namespace Project9
             if (angleDiff > Math.PI)
                 angleDiff = (float)(Math.PI * 2 - angleDiff);
             
-            return angleDiff <= _sightConeAngle / 2.0f;
+            // Use inherited sight cone angle from Enemy base class
+            float sightConeAngle = MathHelper.ToRadians(_cameraData?.SightConeAngle ?? 60.0f);
+            return angleDiff <= sightConeAngle / 2.0f;
         }
 
         public override void Update(float deltaTime)
@@ -135,10 +166,10 @@ namespace Project9
                 // Rotating towards target
                 float rotationDirection = _rotatingRight ? 1.0f : -1.0f;
                 float rotationDelta = _rotationSpeed * rotationDirection * deltaTime;
-                float newRotation = _rotation + rotationDelta;
+                float newRotation = _cameraRotation + rotationDelta;
                 
                 // Calculate shortest angular distance to target
-                float angleToTarget = _targetRotation - _rotation;
+                float angleToTarget = _targetRotation - _cameraRotation;
                 
                 // Normalize angle difference to -PI to PI range
                 while (angleToTarget > Math.PI) angleToTarget -= (float)(Math.PI * 2);
@@ -160,14 +191,14 @@ namespace Project9
                 if (reachedTarget)
                 {
                     // Reached endpoint - snap to target and pause
-                    _rotation = _targetRotation;
-                    _pauseTimer = PAUSE_DURATION;
+                    _cameraRotation = _targetRotation;
+                    _pauseTimer = _pauseDuration;
                     
                     // Reverse direction and set new target
                     _rotatingRight = !_rotatingRight;
                     if (_rotatingRight)
                     {
-                        _targetRotation = _baseRotation + SWEEP_ANGLE;
+                        _targetRotation = _baseRotation + _sweepAngle;
                     }
                     else
                     {
@@ -179,13 +210,13 @@ namespace Project9
                 }
                 else
                 {
-                    _rotation = newRotation;
+                    _cameraRotation = newRotation;
                 }
             }
             
             // Normalize rotation to 0-2PI range
-            while (_rotation >= Math.PI * 2) _rotation -= (float)(Math.PI * 2);
-            while (_rotation < 0) _rotation += (float)(Math.PI * 2);
+            while (_cameraRotation >= Math.PI * 2) _cameraRotation -= (float)(Math.PI * 2);
+            while (_cameraRotation < 0) _cameraRotation += (float)(Math.PI * 2);
         }
 
         /// <summary>
@@ -199,7 +230,7 @@ namespace Project9
             Vector2 directionToPlayer = playerPosition - _position;
             float distanceToPlayer = directionToPlayer.Length();
             
-            float effectiveDetectionRange = playerIsSneaking ? _detectionRange * GameConfig.EnemySneakDetectionMultiplier : _detectionRange;
+            float effectiveDetectionRange = playerIsSneaking ? DetectionRange * GameConfig.EnemySneakDetectionMultiplier : DetectionRange;
             bool playerInRange = distanceToPlayer <= effectiveDetectionRange;
             
             bool detectedThisFrame = false;
@@ -212,12 +243,12 @@ namespace Project9
                 
                 if (inSightCone && !lineOfSightBlocked)
                 {
-                    if (!_hasDetectedPlayer)
+                    if (!_cameraHasDetectedPlayer)
                     {
                         // First detection - always alert immediately
                         detectedThisFrame = true;
                         isFirstDetection = true;
-                        _hasDetectedPlayer = true;
+                        _cameraHasDetectedPlayer = true;
                     }
                     else if (_lastAlertTime >= _alertCooldown)
                     {
@@ -229,18 +260,18 @@ namespace Project9
                 {
                     // Player not in sight cone or line of sight blocked
                     // Keep detection state for a bit before losing it
-                    if (_hasDetectedPlayer && distanceToPlayer > effectiveDetectionRange * 1.5f)
+                    if (_cameraHasDetectedPlayer && distanceToPlayer > effectiveDetectionRange * 1.5f)
                     {
-                        _hasDetectedPlayer = false;
+                        _cameraHasDetectedPlayer = false;
                     }
                 }
             }
             else
             {
                 // Player out of range - lose detection after a delay
-                if (_hasDetectedPlayer && distanceToPlayer > effectiveDetectionRange * 1.5f)
+                if (_cameraHasDetectedPlayer && distanceToPlayer > effectiveDetectionRange * 1.5f)
                 {
-                    _hasDetectedPlayer = false;
+                    _cameraHasDetectedPlayer = false;
                 }
             }
             
@@ -309,12 +340,12 @@ namespace Project9
             {
                 Vector2 drawPosition = _position - new Vector2(32, 16);
                 // Use blue color for camera, red tint if detected player
-                Color drawColor = _hasDetectedPlayer ? Color.Red : Color.Blue;
+                Color drawColor = _cameraHasDetectedPlayer ? Color.Red : Color.Blue;
                 spriteBatch.Draw(_diamondTexture, drawPosition, drawColor);
             }
         }
         
-        public void DrawSightCone(SpriteBatch spriteBatch)
+        public new void DrawSightCone(SpriteBatch spriteBatch)
         {
             // Always draw sight cone (unlike enemies which hide it after detection)
             if (_sightConeTexture == null)
@@ -326,14 +357,14 @@ namespace Project9
             {
                 Vector2 origin = new Vector2(_sightConeTexture.Width / 2.0f, _sightConeTexture.Height / 2.0f);
                 // Red tint if detected, yellow if not
-                Color coneColor = _hasDetectedPlayer ? Color.OrangeRed : Color.Yellow;
+                Color coneColor = _cameraHasDetectedPlayer ? Color.OrangeRed : Color.Yellow;
                 
                 spriteBatch.Draw(
                     _sightConeTexture,
                     _position,
                     null,
                     coneColor,
-                    _rotation,
+                    _cameraRotation,
                     origin,
                     1.0f,
                     SpriteEffects.None,
@@ -349,7 +380,9 @@ namespace Project9
             Color[] colorData = new Color[size * size];
             
             Vector2 center = new Vector2(size / 2.0f, size / 2.0f);
-            float halfAngle = _sightConeAngle / 2.0f;
+            // Use inherited sight cone angle from Enemy base class
+            float sightConeAngle = MathHelper.ToRadians(_cameraData?.SightConeAngle ?? 60.0f);
+            float halfAngle = sightConeAngle / 2.0f;
             
             Vector2 leftEdge = new Vector2(
                 (float)Math.Cos(-halfAngle),
