@@ -23,7 +23,12 @@ namespace Project9
         ToggleLog,
         ReturnCamera,
         PanCamera,
-        Zoom
+        Zoom,
+        SwordSwing,
+        FireProjectile,
+        HoldFireProjectile,
+        SwitchToSword,
+        SwitchToGun
     }
 
     /// <summary>
@@ -79,7 +84,23 @@ namespace Project9
             else if (currentKeyboardState.IsKeyDown(Keys.Space) && 
                      !_previousKeyboardState.IsKeyDown(Keys.Space))
             {
+                // Space bar: Always return camera to player smoothly
                 inputEvent = new InputEvent { Action = InputAction.ReturnCamera };
+            }
+            else if (currentKeyboardState.IsKeyDown(Keys.F) && 
+                     !_previousKeyboardState.IsKeyDown(Keys.F))
+            {
+                // F key: Fire projectile if gun is equipped
+                if (player.EquippedWeapon is Gun)
+                {
+                    // Fire projectile in direction player is facing
+                    Vector2 fireDirection = new Vector2((float)Math.Cos(player.Rotation), (float)Math.Sin(player.Rotation));
+                    inputEvent = new InputEvent 
+                    { 
+                        Action = InputAction.FireProjectile,
+                        Direction = fireDirection
+                    };
+                }
             }
             else if (currentKeyboardState.IsKeyDown(Keys.G) && 
                      !_previousKeyboardState.IsKeyDown(Keys.G))
@@ -116,6 +137,16 @@ namespace Project9
             {
                 inputEvent = new InputEvent { Action = InputAction.ToggleLog };
             }
+            else if (currentKeyboardState.IsKeyDown(Keys.D1) && 
+                     !_previousKeyboardState.IsKeyDown(Keys.D1))
+            {
+                inputEvent = new InputEvent { Action = InputAction.SwitchToSword };
+            }
+            else if (currentKeyboardState.IsKeyDown(Keys.D2) && 
+                     !_previousKeyboardState.IsKeyDown(Keys.D2))
+            {
+                inputEvent = new InputEvent { Action = InputAction.SwitchToGun };
+            }
 
             // Handle mouse input FIRST - mouse clicks should have priority
             // Handle mouse input
@@ -127,6 +158,120 @@ namespace Project9
             bool isOverUI = mouseScreenPos.X >= 10 && mouseScreenPos.X <= 260 && 
                            mouseScreenPos.Y >= 10 && mouseScreenPos.Y <= 130;
 
+            // Right mouse button clicked - ATTACK
+            bool isNewRightClick = currentMouseState.RightButton == ButtonState.Pressed && 
+                                 _previousMouseState.RightButton == ButtonState.Released;
+            
+            if (isNewRightClick && !isOverUI)
+            {
+                Console.WriteLine($"[InputManager] Right mouse clicked at ({mouseWorldPos.X:F0}, {mouseWorldPos.Y:F0})");
+                
+                // Check if click is on or near an enemy
+                Enemy? targetEnemy = null;
+                float closestEnemyDistance = float.MaxValue;
+                const float clickRadius = 40.0f; // Click detection radius for enemies
+                
+                foreach (var enemy in enemies)
+                {
+                    if (!enemy.IsAlive || enemy.IsFlashing)
+                        continue;
+                    
+                    float clickDistanceToEnemy = Vector2.Distance(mouseWorldPos, enemy.Position);
+                    
+                    if (clickDistanceToEnemy <= clickRadius)
+                    {
+                        if (clickDistanceToEnemy < closestEnemyDistance)
+                        {
+                            targetEnemy = enemy;
+                            closestEnemyDistance = clickDistanceToEnemy;
+                        }
+                    }
+                }
+                
+                if (targetEnemy != null)
+                {
+                    // Right-clicked on enemy - attack (fire projectile if gun, melee if sword)
+                    inputEvent = new InputEvent 
+                    { 
+                        Action = InputAction.Attack,
+                        TargetEnemy = targetEnemy,
+                        WorldPosition = targetEnemy.Position
+                    };
+                }
+                else
+                {
+                    // Right-clicked on empty space
+                    if (player.EquippedWeapon is Gun)
+                    {
+                        // Fire projectile in direction player is facing
+                        Vector2 fireDirection = new Vector2((float)Math.Cos(player.Rotation), (float)Math.Sin(player.Rotation));
+                        inputEvent = new InputEvent 
+                        { 
+                            Action = InputAction.FireProjectile,
+                            Direction = fireDirection
+                        };
+                    }
+                    else
+                    {
+                        // Play sword swing animation
+                        inputEvent = new InputEvent 
+                        { 
+                            Action = InputAction.SwordSwing,
+                            WorldPosition = mouseWorldPos
+                        };
+                    }
+                }
+            }
+            
+            // Right mouse button held down - continuous fire with gun
+            bool isRightMouseHeld = currentMouseState.RightButton == ButtonState.Pressed && 
+                                    _previousMouseState.RightButton == ButtonState.Pressed;
+            
+            if (isRightMouseHeld && !isOverUI && inputEvent == null)
+            {
+                // Check if held down on an enemy
+                Enemy? heldEnemy = null;
+                float closestEnemyDistance = float.MaxValue;
+                const float clickRadius = 40.0f;
+                
+                foreach (var enemy in enemies)
+                {
+                    if (!enemy.IsAlive || enemy.IsFlashing)
+                        continue;
+                    
+                    float clickDistanceToEnemy = Vector2.Distance(mouseWorldPos, enemy.Position);
+                    
+                    if (clickDistanceToEnemy <= clickRadius)
+                    {
+                        if (clickDistanceToEnemy < closestEnemyDistance)
+                        {
+                            heldEnemy = enemy;
+                            closestEnemyDistance = clickDistanceToEnemy;
+                        }
+                    }
+                }
+                
+                if (heldEnemy != null && player.EquippedWeapon is Gun)
+                {
+                    // Right-click held on enemy with gun - keep attacking
+                    inputEvent = new InputEvent 
+                    { 
+                        Action = InputAction.Attack,
+                        TargetEnemy = heldEnemy,
+                        WorldPosition = heldEnemy.Position
+                    };
+                }
+                else if (player.EquippedWeapon is Gun)
+                {
+                    // Right-click held on empty space with gun - fire in mouse direction
+                    inputEvent = new InputEvent 
+                    { 
+                        Action = InputAction.HoldFireProjectile,
+                        WorldPosition = mouseWorldPos // Mouse position for player to face
+                    };
+                }
+            }
+            
             // FIX: Detect clicks properly even when clicking rapidly
             // The issue was that if you click while the button was still "pressed" from a previous frame,
             // the state transition check would fail. We need to detect new clicks even if the button
@@ -141,8 +286,8 @@ namespace Project9
                                !_isDragging &&
                                Vector2.Distance(mouseWorldPos, _clickStartPos) > DRAG_THRESHOLD * 0.5f; // Mouse moved = new click intent
             
-            // Left mouse button clicked (new click or rapid click) - ALWAYS MOVES
-            if (isNewClick || isRapidClick)
+            // Left mouse button clicked (new click or rapid click) - MOVE or ATTACK if enemy in range
+            if ((isNewClick || isRapidClick) && inputEvent == null)
             {
                 // Ignore clicks on UI elements
                 if (isOverUI)
@@ -157,13 +302,11 @@ namespace Project9
                     _isDragging = false;
                     _clickStartPos = mouseWorldPos;
                     
-                    // Diablo 2 style: Click on enemy = attack if in range, otherwise move to enemy
-                    // Click on ground = always move
+                    // Check if click is on or near an enemy
                     Enemy? targetEnemy = null;
                     float closestEnemyDistance = float.MaxValue;
                     const float clickRadius = 40.0f; // Click detection radius for enemies
                     
-                    // Check if click is on or near an enemy
                     foreach (var enemy in enemies)
                     {
                         if (!enemy.IsAlive || enemy.IsFlashing)
@@ -171,7 +314,6 @@ namespace Project9
                         
                         float clickDistanceToEnemy = Vector2.Distance(mouseWorldPos, enemy.Position);
                         
-                        // If click is near enemy (within click radius)
                         if (clickDistanceToEnemy <= clickRadius)
                         {
                             if (clickDistanceToEnemy < closestEnemyDistance)
@@ -184,35 +326,17 @@ namespace Project9
                     
                     if (targetEnemy != null)
                     {
-                        // Clicked on/near an enemy - check attack range using collision manager
-                        // Note: We need to get collision manager from somewhere - for now use distance check
-                        // The EntityManager will handle the actual attack range check
-                        float playerDistanceToEnemy = Vector2.Distance(player.Position, targetEnemy.Position);
-                        const float playerAttackRange = 80.0f;
-                        
-                        if (playerDistanceToEnemy <= playerAttackRange)
-                        {
-                            // In attack range - attack
-                            inputEvent = new InputEvent 
-                            { 
-                                Action = InputAction.Attack,
-                                TargetEnemy = targetEnemy,
-                                WorldPosition = targetEnemy.Position
-                            };
-                        }
-                        else
-                        {
-                            // Not in range - move to enemy
-                            inputEvent = new InputEvent 
-                            { 
-                                Action = InputAction.MoveTo,
-                                WorldPosition = targetEnemy.Position
-                            };
-                        }
+                        // Left-click on enemy: Move normally, auto-attack when in range
+                        inputEvent = new InputEvent 
+                        { 
+                            Action = InputAction.MoveTo,
+                            WorldPosition = mouseWorldPos, // Move to click position
+                            TargetEnemy = targetEnemy // Set auto-attack target
+                        };
                     }
                     else
                     {
-                        // Clicked on ground - always move
+                        // Left click on ground - always move
                         inputEvent = new InputEvent 
                         { 
                             Action = InputAction.MoveTo,

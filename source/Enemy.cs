@@ -41,6 +41,10 @@ namespace Project9
         private float _deathPulseSpeed = 2.0f; // Pulses per second
         private bool _isDead = false;
         
+        // Knockback/stun when hit
+        private float _knockbackTimer = 0.0f;
+        public bool IsStunned => _knockbackTimer > 0.0f;
+        
         // Path simplification throttling
         private float _lastSimplifyTime = 0.0f;
         private const float SIMPLIFY_INTERVAL = 0.5f; // Only simplify every 0.5s
@@ -97,6 +101,14 @@ namespace Project9
         public float DetectionRange => _detectionRange;
         public bool IsAttacking => _isAttacking;
         public bool HasDetectedPlayer => _hasDetectedPlayer;
+        
+        /// <summary>
+        /// Apply knockback/stun effect when hit by a weapon
+        /// </summary>
+        public void ApplyKnockback(float duration)
+        {
+            _knockbackTimer = Math.Max(_knockbackTimer, duration); // Use max to prevent shorter stuns from overriding longer ones
+        }
         
         /// <summary>
         /// Check if enemy is at its original position (within threshold)
@@ -298,6 +310,14 @@ namespace Project9
         public void Update(Vector2 playerPosition, float deltaTime, bool playerIsSneaking = false, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, Func<Vector2, bool>? checkTerrainOnly = null, bool alarmActive = false, bool playerIsAlive = true)
         {
             UpdateFlashing(deltaTime);
+            
+            // Update knockback/stun timer
+            if (_knockbackTimer > 0.0f)
+            {
+                _knockbackTimer -= deltaTime;
+                if (_knockbackTimer < 0.0f)
+                    _knockbackTimer = 0.0f;
+            }
 
             if (_currentAttackCooldown > 0.0f)
             {
@@ -402,6 +422,14 @@ namespace Project9
                 }
             }
 
+            // If stunned, don't move or attack
+            if (IsStunned)
+            {
+                _currentSpeed = 0.0f;
+                _isAttacking = false;
+                return; // Skip all AI behavior while stunned
+            }
+            
             // If enemy has detected player (either directly or via camera alert), chase them
             // Use a large chase range when alerted (1024 pixels, same as camera alert radius)
             // During alarm, enemies should chase even without direct line of sight
@@ -1305,7 +1333,22 @@ namespace Project9
 
             if (visible && _diamondTexture != null)
             {
-                Color drawColor = _isAttacking ? Color.OrangeRed : _color;
+                Color drawColor;
+                
+                // Show different color when stunned (knockback effect)
+                if (IsStunned)
+                {
+                    drawColor = Color.Cyan; // Cyan color when stunned/knockback
+                }
+                else if (_isAttacking)
+                {
+                    drawColor = Color.OrangeRed;
+                }
+                else
+                {
+                    drawColor = _color;
+                }
+                
                 Vector2 drawPosition = _position - new Vector2(32, 16);
                 
                 // Apply pulsing effect for dead enemies

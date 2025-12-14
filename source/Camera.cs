@@ -65,6 +65,10 @@ namespace Project9
             _normalColor = Color.Blue;
             _color = Color.Blue;
             
+            // Set camera health to 50
+            _maxHealth = 50.0f;
+            _currentHealth = 50.0f;
+            
             // Initialize camera-specific properties from CameraData
             float sweepAngleRad = MathHelper.ToRadians(cameraData.SweepAngle);
             float rotationSpeedRad = MathHelper.ToRadians(cameraData.CameraRotationSpeed);
@@ -225,6 +229,13 @@ namespace Project9
         public bool UpdateDetection(Vector2 playerPosition, float deltaTime, bool playerIsSneaking, 
             Func<Vector2, Vector2, bool>? checkLineOfSight, System.Collections.Generic.List<Enemy> enemies)
         {
+            // Don't detect if camera is destroyed
+            if (!IsAlive)
+            {
+                _cameraHasDetectedPlayer = false;
+                return false;
+            }
+            
             _lastAlertTime += deltaTime;
             
             Vector2 directionToPlayer = playerPosition - _position;

@@ -1020,6 +1020,16 @@ namespace Project9.Editor
                 DrawCamera(g, camera, camera == _draggedCamera, i);
             }
 
+            // Draw weapons
+            if (_mapData.MapData.Weapons != null)
+            {
+                for (int i = 0; i < _mapData.MapData.Weapons.Count; i++)
+                {
+                    var weapon = _mapData.MapData.Weapons[i];
+                    DrawWeapon(g, weapon, i);
+                }
+            }
+
             // Draw 64x32 grid if enabled
             if (_showGrid64x32)
             {
@@ -1326,6 +1336,64 @@ namespace Project9.Editor
                 float labelY = centerY - halfHeight - textSize.Height - 4; // 4 pixels above the diamond
                 
                 // Draw background rectangle for better visibility
+                RectangleF backgroundRect = new RectangleF(
+                    labelX - 2,
+                    labelY - 1,
+                    textSize.Width + 4,
+                    textSize.Height + 2
+                );
+                g.FillRectangle(backgroundBrush, backgroundRect);
+                
+                // Draw text
+                g.DrawString(label, font, textBrush, labelX, labelY);
+            }
+        }
+
+        private void DrawWeapon(Graphics g, WeaponData weapon, int index)
+        {
+            float centerX = weapon.X;
+            float centerY = weapon.Y;
+            
+            // Determine weapon type and color
+            bool isGun = weapon.Type.ToLower() == "gun";
+            Color weaponColor = isGun ? Color.DarkGray : Color.Silver;
+            
+            // Isometric diamond dimensions (smaller than entities)
+            float halfWidth = 12.0f;  // Half width of the isometric box (24 total)
+            float halfHeight = 6.0f;  // Half height of the isometric box (12 total)
+            
+            // Define the 4 points of the isometric diamond
+            PointF[] diamondPoints = new PointF[]
+            {
+                new PointF(centerX, centerY - halfHeight),                    // Top
+                new PointF(centerX + halfWidth, centerY),                     // Right
+                new PointF(centerX, centerY + halfHeight),                    // Bottom
+                new PointF(centerX - halfWidth, centerY)                      // Left
+            };
+            
+            // Draw filled isometric diamond with weapon-specific color
+            using (SolidBrush brush = new SolidBrush(weaponColor))
+            {
+                g.FillPolygon(brush, diamondPoints);
+            }
+            
+            // Draw outline
+            using (Pen pen = new Pen(Color.White, 1))
+            {
+                g.DrawPolygon(pen, diamondPoints);
+            }
+            
+            // Draw label above the weapon
+            string label = $"{weapon.Type} {index}";
+            using (Font font = new Font("Arial", 9, FontStyle.Bold))
+            using (SolidBrush textBrush = new SolidBrush(Color.White))
+            using (SolidBrush backgroundBrush = new SolidBrush(Color.FromArgb(200, Color.Black)))
+            {
+                SizeF textSize = g.MeasureString(label, font);
+                float labelX = centerX - textSize.Width / 2;
+                float labelY = centerY - halfHeight - textSize.Height - 5;
+                
+                // Draw background rectangle
                 RectangleF backgroundRect = new RectangleF(
                     labelX - 2,
                     labelY - 1,

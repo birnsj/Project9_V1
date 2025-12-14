@@ -102,6 +102,7 @@ namespace Project9
             _entityManager = new EntityManager(player);
             _entityManager.LoadEnemies(_map.MapData);
             _entityManager.LoadCameras(_map.MapData);
+            _entityManager.LoadWeapons(_map.MapData);
             
             // Create CollisionManager once with loaded enemies
             _collisionManager = new CollisionManager(_entityManager.Enemies);
@@ -139,6 +140,10 @@ namespace Project9
             foreach (var camera in _entityManager.Cameras)
             {
                 camera.InitializeTextures(GraphicsDevice);
+            }
+            foreach (var weaponPickup in _entityManager.WeaponPickups)
+            {
+                weaponPickup.InitializeTextures(GraphicsDevice);
             }
 
             // Center camera on player
@@ -242,7 +247,11 @@ namespace Project9
 
             // Process input - Myra Desktop input disabled to prevent click consumption
             _inputStopwatch.Restart();
-            var inputEvent = _inputManager.ProcessInput(deltaTime, _entityManager.Player, _entityManager.Enemies);
+            // Combine enemies and cameras for input detection (cameras inherit from Enemy)
+            var allTargets = new System.Collections.Generic.List<Enemy>();
+            allTargets.AddRange(_entityManager.Enemies);
+            allTargets.AddRange(_entityManager.Cameras);
+            var inputEvent = _inputManager.ProcessInput(deltaTime, _entityManager.Player, allTargets);
             _inputStopwatch.Stop();
             
             // Don't call Myra Desktop UpdateInput - it may be consuming/altering mouse state
@@ -265,11 +274,54 @@ namespace Project9
                         // Player can immediately click to move after attacking
                         break;
 
+                    case InputAction.SwordSwing:
+                        // Play sword swing animation
+                        _entityManager.Player.StartSwordSwing();
+                        LogOverlay.Log("[Game1] Sword swing!", LogLevel.Info);
+                        break;
+
+                    case InputAction.FireProjectile:
+                        // Fire projectile in specified direction
+                        _entityManager.FireProjectile(inputEvent.Direction);
+                        break;
+
+                    case InputAction.HoldFireProjectile:
+                        // Stop movement, face mouse cursor, and fire continuously
+                        _entityManager.HoldFireProjectile(inputEvent.WorldPosition);
+                        break;
+
+                    case InputAction.SwitchToSword:
+                        // Switch to sword (key 1)
+                        if (!_entityManager.Player.SwitchToSword())
+                        {
+                            LogOverlay.Log("[Game1] Sword not in inventory!", LogLevel.Warning);
+                        }
+                        break;
+
+                    case InputAction.SwitchToGun:
+                        // Switch to gun (key 2)
+                        if (!_entityManager.Player.SwitchToGun())
+                        {
+                            LogOverlay.Log("[Game1] Gun not in inventory!", LogLevel.Warning);
+                        }
+                        break;
+
                     case InputAction.MoveTo:
                         LogOverlay.Log($"[Input] Move to: ({inputEvent.WorldPosition.X:F1}, {inputEvent.WorldPosition.Y:F1})", LogLevel.Info);
                         // CRITICAL: Always process movement - never block it
                         // This should work even if player is being attacked or just attacked
                         _entityManager.MovePlayerTo(inputEvent.WorldPosition);
+                        
+                        // If TargetEnemy is set, enable auto-attack (left-click on enemy)
+                        if (inputEvent.TargetEnemy != null)
+                        {
+                            _entityManager.SetAutoAttackTarget(inputEvent.TargetEnemy);
+                        }
+                        else
+                        {
+                            _entityManager.ClearAutoAttackTarget();
+                        }
+                        
                         _renderSystem.ShowClickEffect(inputEvent.WorldPosition);
                         break;
 
@@ -352,7 +404,7 @@ namespace Project9
             // Update camera
             if (_cameraFollowingPlayer)
             {
-                _camera.FollowTarget(_entityManager.Player.Position, _screenCenter);
+                _camera.FollowTarget(_entityManager.Player.Position, _screenCenter, deltaTime);
             }
 
             // Update UI

@@ -28,6 +28,7 @@ namespace Project9
         private Texture2D? _healthBarBackgroundTexture;
         private Texture2D? _healthBarForegroundTexture;
         private Texture2D? _bloodSplatTexture;
+        private Texture2D? _pistolRangeCircleTexture;
         
         // Click effect
         private Vector2? _clickEffectPosition;
@@ -187,8 +188,19 @@ namespace Project9
                 if (camera.Position.X + 100 >= minX && camera.Position.X - 100 <= maxX &&
                     camera.Position.Y + 100 >= minY && camera.Position.Y - 100 <= maxY)
                 {
-                    camera.DrawSightCone(_spriteBatch);
+                    // Only draw sight cone if camera is alive
+                    if (camera.IsAlive)
+                    {
+                        camera.DrawSightCone(_spriteBatch);
+                    }
                     camera.Draw(_spriteBatch);
+                    
+                    // Draw health bar if camera has been damaged (health < maxHealth)
+                    if (camera.IsAlive && camera.CurrentHealth < camera.MaxHealth)
+                    {
+                        DrawEnemyHealthBar(_spriteBatch, camera);
+                    }
+                    
                     _lastDrawCallCount += 2; // Sight cone, sprite
                 }
             }
@@ -261,6 +273,36 @@ namespace Project9
                 DrawBloodSplat(_spriteBatch, entityManager.Player.Position);
             }
             
+            // Draw weapon pickups (before player so they appear below)
+            foreach (var weaponPickup in entityManager.WeaponPickups)
+            {
+                if (!weaponPickup.IsPickedUp)
+                {
+                    // Frustum culling for weapons
+                    if (weaponPickup.Position.X + 30 >= minX && weaponPickup.Position.X - 30 <= maxX &&
+                        weaponPickup.Position.Y + 30 >= minY && weaponPickup.Position.Y - 30 <= maxY)
+                    {
+                        weaponPickup.Draw(_spriteBatch);
+                        _lastDrawCallCount++;
+                    }
+                }
+            }
+            
+            // Draw projectiles
+            foreach (var projectile in entityManager.Projectiles)
+            {
+                if (!projectile.IsExpired)
+                {
+                    // Frustum culling for projectiles
+                    if (projectile.Position.X + 10 >= minX && projectile.Position.X - 10 <= maxX &&
+                        projectile.Position.Y + 10 >= minY && projectile.Position.Y - 10 <= maxY)
+                    {
+                        projectile.Draw(_spriteBatch);
+                        _lastDrawCallCount++;
+                    }
+                }
+            }
+
             // Draw player
             if (!entityManager.Player.IsDead && _showCollisionSpheres)
             {
@@ -272,6 +314,18 @@ namespace Project9
             if (!entityManager.Player.IsDead)
             {
                 entityManager.Player.DrawDirectionIndicator(_spriteBatch, entityManager.Player.Rotation);
+            }
+            
+            // Draw equipped weapon after direction indicator so it's on top (only if alive and has weapon)
+            if (!entityManager.Player.IsDead && entityManager.Player.EquippedWeapon != null)
+            {
+                DrawPlayerWeapon(_spriteBatch, entityManager.Player);
+                
+                // Draw range indicator for gun
+                if (entityManager.Player.EquippedWeapon is Gun)
+                {
+                    DrawPistolRange(_spriteBatch, entityManager.Player);
+                }
             }
             
             int playerDrawCount = entityManager.Player.IsDead ? 2 : (_showCollisionSpheres ? 3 : 2); // Blood splat + sprite for dead, full set for alive
@@ -1178,6 +1232,136 @@ namespace Project9
             // Draw text with shadow for better visibility
             spriteBatch.DrawString(_uiFont, name, textPos + new Vector2(1, 1), new Color(0, 0, 0, 200));
             spriteBatch.DrawString(_uiFont, name, textPos, nameColor);
+        }
+
+        /// <summary>
+        /// Draw the player's equipped weapon
+        /// </summary>
+        private void DrawPlayerWeapon(SpriteBatch spriteBatch, Player player)
+        {
+            if (player.EquippedWeapon == null)
+                return;
+                
+            // Create a simple line texture if needed
+            if (_healthBarForegroundTexture == null)
+            {
+                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _healthBarForegroundTexture.SetData(new[] { Color.White });
+            }
+            
+            // Calculate direction player is facing
+            float rotation = player.Rotation;
+            
+            // Apply sword swing animation angle if swinging (only for sword)
+            if (player.EquippedWeapon is Sword && player.IsSwingingSword)
+            {
+                rotation += player.GetSwordSwingAngle();
+            }
+            
+            Vector2 direction = new Vector2((float)Math.Cos(rotation), (float)Math.Sin(rotation));
+            
+            // Determine weapon properties based on type
+            float weaponLength;
+            float weaponThickness;
+            Color weaponColor;
+            
+            if (player.EquippedWeapon is Gun)
+            {
+                // Gun: shorter and thicker, yellow color
+                weaponLength = 50.0f;
+                weaponThickness = 10.0f;
+                weaponColor = Color.Yellow;
+            }
+            else // Sword
+            {
+                // Sword: longer and thinner, silver color
+                weaponLength = 75.0f;
+                weaponThickness = 8.0f;
+                weaponColor = new Color(220, 220, 255); // Bright silver/white
+            }
+            
+            Vector2 weaponEnd = player.Position + direction * weaponLength;
+            
+            // Draw weapon as a line extending from player in facing direction
+            Vector2 edge = weaponEnd - player.Position;
+            float angle = (float)Math.Atan2(edge.Y, edge.X);
+            float lineLength = edge.Length();
+            
+            if (_healthBarForegroundTexture != null)
+            {
+                spriteBatch.Draw(
+                    _healthBarForegroundTexture,
+                    player.Position,
+                    null,
+                    weaponColor,
+                    angle,
+                    Vector2.Zero,
+                    new Vector2(lineLength, weaponThickness),
+                    SpriteEffects.None,
+                    0.0f
+                );
+            }
+        }
+        
+        /// <summary>
+        /// Draw the pistol's projectile range as a circle around the player (same method as enemy aggro radius)
+        /// </summary>
+        private void DrawPistolRange(SpriteBatch spriteBatch, Player player)
+        {
+            if (player.EquippedWeapon is not Gun gun)
+                return;
+            
+            // Calculate projectile range (speed * lifetime)
+            const float projectileLifetime = 0.5f; // 250 / 500 = 0.5 seconds
+            float range = gun.ProjectileSpeed * projectileLifetime; // 500 * 0.5 = 250 pixels
+            
+            int radius = (int)range;
+            
+            // Create or update circle texture if needed (same as enemy aggro radius)
+            if (_pistolRangeCircleTexture == null || _pistolRangeCircleTexture.Width != radius * 2)
+            {
+                CreatePistolRangeCircleTexture(radius);
+            }
+            
+            if (_pistolRangeCircleTexture == null)
+                return;
+            
+            // Draw the circle (same way as enemy aggro radius)
+            Vector2 drawPosition = player.Position - new Vector2(range, range);
+            spriteBatch.Draw(_pistolRangeCircleTexture, drawPosition, Color.White);
+        }
+        
+        /// <summary>
+        /// Create a circle ring texture for pistol range (same method as enemy aggro radius)
+        /// </summary>
+        private void CreatePistolRangeCircleTexture(int radius)
+        {
+            int diameter = radius * 2;
+            _pistolRangeCircleTexture = new Texture2D(_graphicsDevice, diameter, diameter);
+            Color[] colorData = new Color[diameter * diameter];
+            
+            Vector2 center = new Vector2(radius, radius);
+            
+            for (int x = 0; x < diameter; x++)
+            {
+                for (int y = 0; y < diameter; y++)
+                {
+                    Vector2 pos = new Vector2(x, y);
+                    float distance = Vector2.Distance(pos, center);
+                    
+                    // Draw ring (same as enemy aggro radius - 2 pixel thick ring)
+                    if (distance >= radius - 2 && distance <= radius)
+                    {
+                        colorData[y * diameter + x] = new Color(255, 255, 0, 100); // Yellow, semi-transparent
+                    }
+                    else
+                    {
+                        colorData[y * diameter + x] = Color.Transparent;
+                    }
+                }
+            }
+            
+            _pistolRangeCircleTexture.SetData(colorData);
         }
         
         private void DrawDamageNumbers(SpriteBatch spriteBatch)

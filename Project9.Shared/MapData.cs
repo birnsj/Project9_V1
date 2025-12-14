@@ -171,6 +171,21 @@ namespace Project9.Shared
     }
 
     /// <summary>
+    /// Represents a weapon spawn position in the map for JSON serialization
+    /// </summary>
+    public class WeaponData
+    {
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = "sword"; // "sword", etc.
+
+        [JsonPropertyName("x")]
+        public float X { get; set; }
+
+        [JsonPropertyName("y")]
+        public float Y { get; set; }
+    }
+
+    /// <summary>
     /// Complete map data structure for JSON serialization
     /// </summary>
     public class MapData
@@ -189,6 +204,9 @@ namespace Project9.Shared
 
         [JsonPropertyName("cameras")]
         public List<CameraData> Cameras { get; set; } = new List<CameraData>();
+
+        [JsonPropertyName("weapons")]
+        public List<WeaponData> Weapons { get; set; } = new List<WeaponData>();
 
         [JsonPropertyName("player")]
         public PlayerData? Player { get; set; }

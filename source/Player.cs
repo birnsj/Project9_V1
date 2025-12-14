@@ -27,10 +27,25 @@ namespace Project9
         // Path checking throttling
         private float _lastPathCheckTime = 0.0f;
 
+        // Weapon system
+        private Weapon? _equippedWeapon = null;
+        private Dictionary<Type, Weapon> _weaponInventory = new Dictionary<Type, Weapon>();
+        private Texture2D? _weaponLineTexture;
+        
+        // Sword swing animation
+        private bool _isSwingingSword = false;
+        private float _swordSwingTimer = 0.0f;
+        private const float SWORD_SWING_DURATION = 0.3f; // 0.3 seconds for swing animation
+        private float _swordSwingAngle = 0.0f; // Current swing angle offset
+        
+        // Gun fire rate tracking
+        private float _fireCooldownTimer = 0.0f;
+
         public bool IsSneaking => _isSneaking;
         public bool IsDead => _isDead;
         public float RespawnTimer => _respawnTimer;
         public bool IsRespawning => _isDead && _respawnTimer > 0.0f;
+        public Weapon? EquippedWeapon => _equippedWeapon;
 
         public float WalkSpeed
         {
@@ -59,6 +74,12 @@ namespace Project9
             _rotation = playerData?.Rotation ?? 0.0f; // Initialize facing direction
             _spawnPosition = startPosition; // Store spawn position for respawn
             _deathPulseSpeed = playerData?.DeathPulseSpeed ?? 2.0f;
+            
+            // Start with both weapons in inventory, default to gun (pistol)
+            _weaponInventory[typeof(Sword)] = new Sword();
+            _weaponInventory[typeof(Gun)] = new Gun();
+            _equippedWeapon = new Gun(); // Default to pistol
+            LogOverlay.Log("[Player] Started with Sword and Gun (Gun equipped)", LogLevel.Info);
         }
         
         public void UpdateFromPlayerData(Project9.Shared.PlayerData playerData)
@@ -76,6 +97,100 @@ namespace Project9
         }
         
         public float Rotation => _rotation;
+
+        /// <summary>
+        /// Add a weapon to inventory (doesn't automatically equip it)
+        /// </summary>
+        public void AddWeaponToInventory(Weapon weapon)
+        {
+            _weaponInventory[weapon.GetType()] = weapon;
+            LogOverlay.Log($"[Player] Added {weapon.Name} to inventory", LogLevel.Info);
+        }
+        
+        /// <summary>
+        /// Equip a weapon (replaces current weapon if any)
+        /// </summary>
+        public void EquipWeapon(Weapon weapon)
+        {
+            _equippedWeapon = weapon;
+            // Also add to inventory
+            _weaponInventory[weapon.GetType()] = weapon;
+            LogOverlay.Log($"[Player] Equipped {weapon.Name} (Damage: {weapon.Damage})", LogLevel.Info);
+        }
+        
+        /// <summary>
+        /// Switch to sword (key 1)
+        /// </summary>
+        public bool SwitchToSword()
+        {
+            if (_weaponInventory.TryGetValue(typeof(Sword), out Weapon? sword))
+            {
+                _equippedWeapon = sword;
+                LogOverlay.Log($"[Player] Switched to {sword.Name}", LogLevel.Info);
+                return true;
+            }
+            return false;
+        }
+        
+        /// <summary>
+        /// Switch to gun (key 2)
+        /// </summary>
+        public bool SwitchToGun()
+        {
+            if (_weaponInventory.TryGetValue(typeof(Gun), out Weapon? gun))
+            {
+                _equippedWeapon = gun;
+                LogOverlay.Log($"[Player] Switched to {gun.Name}", LogLevel.Info);
+                return true;
+            }
+            return false;
+        }
+        
+        /// <summary>
+        /// Start sword swing animation
+        /// </summary>
+        public void StartSwordSwing()
+        {
+            if (_equippedWeapon != null)
+            {
+                _isSwingingSword = true;
+                _swordSwingTimer = SWORD_SWING_DURATION;
+                _swordSwingAngle = 0.0f;
+            }
+        }
+        
+        public bool IsSwingingSword => _isSwingingSword;
+        
+        /// <summary>
+        /// Get the current sword swing angle offset for rendering
+        /// </summary>
+        public float GetSwordSwingAngle()
+        {
+            return _swordSwingAngle;
+        }
+        
+        /// <summary>
+        /// Check if player can fire (fire rate cooldown check)
+        /// </summary>
+        public bool CanFire()
+        {
+            if (_equippedWeapon is Gun gun)
+            {
+                return _fireCooldownTimer <= 0.0f;
+            }
+            return false;
+        }
+        
+        /// <summary>
+        /// Called when player fires a projectile
+        /// </summary>
+        public void OnFired()
+        {
+            if (_equippedWeapon is Gun gun)
+            {
+                _fireCooldownTimer = gun.FireCooldown;
+            }
+        }
         
         /// <summary>
         /// Set rotation to face a target position
@@ -394,6 +509,32 @@ namespace Project9
         public void Update(Vector2? followPosition, float deltaTime, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, System.Collections.Generic.IEnumerable<Enemy>? specificEnemies = null)
         {
             UpdateFlashing(deltaTime);
+            
+            // Update sword swing animation
+            if (_isSwingingSword)
+            {
+                _swordSwingTimer -= deltaTime;
+                if (_swordSwingTimer <= 0.0f)
+                {
+                    _isSwingingSword = false;
+                    _swordSwingTimer = 0.0f;
+                    _swordSwingAngle = 0.0f;
+                }
+                else
+                {
+                    // Animate swing: rotate from -45 degrees to +45 degrees over the duration
+                    float swingProgress = 1.0f - (_swordSwingTimer / SWORD_SWING_DURATION);
+                    _swordSwingAngle = MathHelper.Lerp(-MathHelper.PiOver4, MathHelper.PiOver4, swingProgress); // -45 to +45 degrees
+                }
+            }
+            
+            // Update fire cooldown
+            if (_fireCooldownTimer > 0.0f)
+            {
+                _fireCooldownTimer -= deltaTime;
+                if (_fireCooldownTimer < 0.0f)
+                    _fireCooldownTimer = 0.0f;
+            }
 
             Vector2? moveTarget = null;
 
@@ -402,6 +543,21 @@ namespace Project9
                 float deadZone = _isSneaking ? 8.0f : 2.0f;
                 Vector2 direction = followPosition.Value - _position;
                 float distance = direction.Length();
+                
+                // Always update rotation to face cursor when dragging (even with gun equipped)
+                if (direction.LengthSquared() > 0.01f)
+                {
+                    direction.Normalize();
+                    // Only lock to attack target if using melee weapon (sword)
+                    if (_attackTarget.HasValue && _equippedWeapon is Sword)
+                    {
+                        FaceTarget(_attackTarget.Value);
+                    }
+                    else
+                    {
+                        _rotation = (float)Math.Atan2(direction.Y, direction.X);
+                    }
+                }
                 
                 if (distance > deadZone)
                 {
@@ -574,9 +730,10 @@ namespace Project9
                 else if (distance > stopThreshold)
                 {
                     direction.Normalize();
-                    // Update rotation based on movement direction, unless attacking
-                    // If attacking, keep facing the attack target
-                    if (_attackTarget.HasValue)
+                    // Update rotation based on movement direction
+                    // Only lock to attack target if using melee weapon (sword)
+                    // For guns, allow free rotation
+                    if (_attackTarget.HasValue && _equippedWeapon is Sword)
                     {
                         FaceTarget(_attackTarget.Value);
                     }
@@ -922,6 +1079,49 @@ namespace Project9
                 }
                 
                 spriteBatch.Draw(_diamondTexture, drawPosition, drawColor);
+            }
+            
+            // Weapon drawing is now handled in RenderSystem after direction indicator
+        }
+        
+        /// <summary>
+        /// Draw the equipped weapon as a simple rectangle (like the direction arrow)
+        /// </summary>
+        private void DrawWeapon(SpriteBatch spriteBatch)
+        {
+            // Create a simple line texture if needed (same as direction indicator)
+            if (_weaponLineTexture == null)
+            {
+                _weaponLineTexture = new Texture2D(spriteBatch.GraphicsDevice, 1, 1);
+                _weaponLineTexture.SetData(new[] { Color.White });
+            }
+            
+            // Calculate direction player is facing
+            Vector2 direction = new Vector2((float)Math.Cos(_rotation), (float)Math.Sin(_rotation));
+            float swordLength = 25.0f; // Make it visible - same length as direction arrow
+            Vector2 swordEnd = _position + direction * swordLength;
+            
+            // Draw sword as a line (like the direction arrow) but silver and slightly thicker
+            Vector2 edge = swordEnd - _position;
+            float angle = (float)Math.Atan2(edge.Y, edge.X);
+            float lineLength = edge.Length();
+            
+            // Use bright silver/white color to make it more visible
+            Color swordColor = new Color(220, 220, 255); // Bright silver/white
+            
+            if (_weaponLineTexture != null)
+            {
+                spriteBatch.Draw(
+                    _weaponLineTexture,
+                    _position,
+                    null,
+                    swordColor,
+                    angle,
+                    Vector2.Zero,
+                    new Vector2(lineLength, 4.0f), // Slightly thicker than direction arrow (4 pixels)
+                    SpriteEffects.None,
+                    0.0f
+                );
             }
         }
     }
