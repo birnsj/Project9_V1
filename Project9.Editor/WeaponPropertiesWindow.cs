@@ -1,22 +1,23 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 using Project9.Shared;
 
 namespace Project9.Editor
 {
     /// <summary>
-    /// Dockable window for editing player properties
+    /// Dockable window for editing weapon properties
     /// </summary>
-    public class PlayerPropertiesWindow : Form
+    public class WeaponPropertiesWindow : Form
     {
         private PropertyGrid _propertyGrid = null!;
-        private PlayerData? _currentPlayer;
+        private WeaponData? _currentWeapon;
         private Button _dockButton = null!;
         private Label _titleLabel = null!;
-        private TextBox _nameTextBox = null!;
-        private Label _nameLabel = null!;
+        private TextBox _typeTextBox = null!;
+        private Label _typeLabel = null!;
         private Action? _onSaveCallback;
         private bool _isDocked = false;
         private Form? _parentForm;
@@ -30,17 +31,17 @@ namespace Project9.Editor
         /// </summary>
         public event EventHandler? DockingChanged;
 
-        public PlayerData? CurrentPlayer
+        public WeaponData? CurrentWeapon
         {
-            get => _currentPlayer;
+            get => _currentWeapon;
             set
             {
-                _currentPlayer = value;
+                _currentWeapon = value;
                 UpdatePropertyGrid();
             }
         }
 
-        public PlayerPropertiesWindow()
+        public WeaponPropertiesWindow()
         {
             InitializeComponent();
         }
@@ -62,7 +63,7 @@ namespace Project9.Editor
         
         public bool IsDocked => _isDocked;
         
-        public int DockedWidth => _isDocked ? this.Width : 0;
+        public int DockedHeight => _isDocked ? this.Height : 0;
         
         private void ParentForm_Resize(object? sender, EventArgs e)
         {
@@ -354,7 +355,7 @@ namespace Project9.Editor
 
         private void InitializeComponent()
         {
-            this.Text = "Player Properties";
+            this.Text = "Weapon Properties";
             this.Size = new Size(350, 500);
             this.FormBorderStyle = FormBorderStyle.SizableToolWindow;
             this.ShowInTaskbar = false;
@@ -388,7 +389,7 @@ namespace Project9.Editor
             
             _titleLabel = new Label
             {
-                Text = "Player Properties",
+                Text = "Weapon Properties",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(12, 0, 0, 0),
@@ -433,46 +434,47 @@ namespace Project9.Editor
             
             titlePanel.Controls.Add(_titleLabel);
             titlePanel.Controls.Add(dockButton);
-            
-            // Name field panel at the top
-            Panel namePanel = new Panel
+            this.Controls.Add(titlePanel);
+
+            // Type field panel at the top
+            Panel typePanel = new Panel
             {
                 Dock = DockStyle.Top,
                 Height = 50,
                 BackColor = Color.FromArgb(250, 250, 250),
                 Padding = new Padding(10, 8, 10, 8)
             };
-            namePanel.Paint += (s, e) =>
+            typePanel.Paint += (s, e) =>
             {
                 // Draw bottom border
                 using (var pen = new Pen(Color.FromArgb(220, 220, 220), 1))
                 {
-                    e.Graphics.DrawLine(pen, 0, namePanel.Height - 1, namePanel.Width, namePanel.Height - 1);
+                    e.Graphics.DrawLine(pen, 0, typePanel.Height - 1, typePanel.Width, typePanel.Height - 1);
                 }
             };
             
-            _nameLabel = new Label
+            _typeLabel = new Label
             {
-                Text = "Name:",
+                Text = "Type:",
                 Location = new Point(10, 12),
                 Size = new Size(50, 20),
                 Font = new Font("Segoe UI", 9),
                 ForeColor = Color.FromArgb(30, 30, 30)
             };
             
-            _nameTextBox = new TextBox
+            _typeTextBox = new TextBox
             {
                 Location = new Point(65, 10),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                Width = namePanel.Width - 75,
+                Width = typePanel.Width - 75,
                 Font = new Font("Segoe UI", 9),
                 BorderStyle = BorderStyle.FixedSingle
             };
-            _nameTextBox.TextChanged += _nameTextBox_TextChanged;
+            _typeTextBox.TextChanged += _typeTextBox_TextChanged;
             
-            namePanel.Controls.Add(_nameLabel);
-            namePanel.Controls.Add(_nameTextBox);
-            this.Controls.Add(namePanel);
+            typePanel.Controls.Add(_typeLabel);
+            typePanel.Controls.Add(_typeTextBox);
+            this.Controls.Add(typePanel);
 
             // Property grid with better styling
             _propertyGrid = new PropertyGrid
@@ -485,15 +487,8 @@ namespace Project9.Editor
                 Font = new Font("Segoe UI", 9),
                 LineColor = Color.FromArgb(230, 230, 230)
             };
-            _propertyGrid.PropertyValueChanged += (s, e) =>
-            {
-                _onSaveCallback?.Invoke(); // Auto-save on change
-                // Update title if Name, X, or Y changed
-                if (_currentPlayer != null && (e.ChangedItem?.Label == "Name" || e.ChangedItem?.Label == "X" || e.ChangedItem?.Label == "Y"))
-                {
-                    UpdateTitle();
-                }
-            };
+            _propertyGrid.PropertyValueChanged += PropertyGrid_PropertyValueChanged;
+            this.Controls.Add(_propertyGrid);
             
             // Enable drag-to-adjust for numeric properties
             var dragHandler = new PropertyGridDragHandler(_propertyGrid, () =>
@@ -501,50 +496,10 @@ namespace Project9.Editor
                 _onSaveCallback?.Invoke(); // Auto-save on change
                 _mapRenderControl?.Invalidate(); // Refresh the editor view
             });
-            
-            // Bottom panel with save button
-            Panel bottomPanel = new Panel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 60,
-                BackColor = Color.FromArgb(250, 250, 250),
-                Padding = new Padding(10, 10, 10, 10)
-            };
-            bottomPanel.Paint += (s, e) =>
-            {
-                // Draw top border
-                using (var pen = new Pen(Color.FromArgb(220, 220, 220), 1))
-                {
-                    e.Graphics.DrawLine(pen, 0, 0, bottomPanel.Width, 0);
-                }
-            };
-            
-            // Large save button (blue)
-            Button saveButton = new Button
-            {
-                Text = "Save",
-                Dock = DockStyle.Fill,
-                Height = 40,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(0, 120, 215),
-                Cursor = Cursors.Hand
-            };
-            saveButton.FlatAppearance.BorderSize = 0;
-            saveButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 150, 255);
-            saveButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(0, 100, 180);
-            saveButton.Click += (s, e) =>
-            {
-                _onSaveCallback?.Invoke();
-            };
-            
-            bottomPanel.Controls.Add(saveButton);
-            
-            // Layout
-            this.Controls.Add(_propertyGrid);
-            this.Controls.Add(bottomPanel);
-            this.Controls.Add(titlePanel);
+
+            // Set control order
+            this.Controls.SetChildIndex(_propertyGrid, 0);
+            // Title panel is already at index 2
             
             // Enable dragging for title panel to undock
             titlePanel.MouseDown += TitlePanel_MouseDown;
@@ -616,35 +571,48 @@ namespace Project9.Editor
             }
         }
 
+        public void SetSaveCallback(Action? callback)
+        {
+            _onSaveCallback = callback;
+        }
+
         private void UpdatePropertyGrid()
         {
-            if (_currentPlayer != null)
+            if (_currentWeapon != null)
             {
-                // Update name text box (temporarily disable TextChanged to avoid triggering save)
-                _nameTextBox.TextChanged -= _nameTextBox_TextChanged;
-                _nameTextBox.Text = _currentPlayer.Name ?? "";
-                _nameTextBox.TextChanged += _nameTextBox_TextChanged;
+                // Update type text box (read-only, shows current type)
+                _typeTextBox.TextChanged -= _typeTextBox_TextChanged;
+                _typeTextBox.Text = _currentWeapon.Type;
+                _typeTextBox.ReadOnly = true; // Type is determined by the class, not editable
+                _typeTextBox.TextChanged += _typeTextBox_TextChanged;
                 
-                // Create a wrapper to expose properties with categories
-                _propertyGrid.SelectedObject = new PlayerPropertiesWrapper(_currentPlayer);
+                // Create a wrapper object for property grid editing
+                // Use GunPropertiesWrapper for guns to show gun-specific properties
+                object wrapper = _currentWeapon switch
+                {
+                    GunData gunData => new GunPropertiesWrapper(gunData),
+                    _ => new WeaponPropertiesWrapper(_currentWeapon)
+                };
+                _propertyGrid.SelectedObject = wrapper;
                 UpdateTitle();
                 // Data loaded
             }
             else
             {
-                _nameTextBox.TextChanged -= _nameTextBox_TextChanged;
-                _nameTextBox.Text = "";
-                _nameTextBox.TextChanged += _nameTextBox_TextChanged;
+                _typeTextBox.TextChanged -= _typeTextBox_TextChanged;
+                _typeTextBox.Text = "";
+                _typeTextBox.ReadOnly = false;
+                _typeTextBox.TextChanged += _typeTextBox_TextChanged;
                 _propertyGrid.SelectedObject = null;
-                _titleLabel.Text = "  Player Properties  •  No Selection";
+                _titleLabel.Text = "  Weapon Properties  •  No Selection";
             }
         }
         
-        private void _nameTextBox_TextChanged(object? sender, EventArgs e)
+        private void _typeTextBox_TextChanged(object? sender, EventArgs e)
         {
-            if (_currentPlayer != null)
+            // Type is read-only, so this shouldn't be called, but handle it gracefully
+            if (_currentWeapon != null)
             {
-                _currentPlayer.Name = _nameTextBox.Text;
                 _onSaveCallback?.Invoke(); // Auto-save on change
                 UpdateTitle();
             }
@@ -652,141 +620,178 @@ namespace Project9.Editor
         
         private void UpdateTitle()
         {
-            if (_currentPlayer != null)
+            if (_currentWeapon != null)
             {
-                string nameDisplay = string.IsNullOrWhiteSpace(_currentPlayer.Name) ? "Unnamed" : _currentPlayer.Name;
-                _titleLabel.Text = $"  Player Properties  •  {nameDisplay}  •  X: {_currentPlayer.X:F1}, Y: {_currentPlayer.Y:F1}";
+                string typeDisplay = string.IsNullOrWhiteSpace(_currentWeapon.Type) ? "Unnamed" : _currentWeapon.Type;
+                _titleLabel.Text = $"  Weapon Properties  •  {typeDisplay}  •  X: {_currentWeapon.X:F1}, Y: {_currentWeapon.Y:F1}";
             }
         }
 
-        public void SetSaveCallback(Action callback)
+        private void PropertyGrid_PropertyValueChanged(object? s, PropertyValueChangedEventArgs e)
         {
-            _onSaveCallback = callback;
+            // Auto-save on property change
+            _onSaveCallback?.Invoke();
+            
+            // Update title if Type, X, or Y changed
+            if (_currentWeapon != null && (e.ChangedItem?.Label == "Type" || e.ChangedItem?.Label == "X" || e.ChangedItem?.Label == "Y"))
+            {
+                UpdateTitle();
+            }
         }
 
-        
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // Hide instead of close to preserve the window
+            if (e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                this.Hide();
+            }
+            base.OnFormClosing(e);
+        }
+
         /// <summary>
-        /// Wrapper class to organize player properties in categories for PropertyGrid
+        /// Wrapper class to expose WeaponData properties for PropertyGrid editing
         /// </summary>
-        private class PlayerPropertiesWrapper
+        private class WeaponPropertiesWrapper
         {
-            private PlayerData _playerData;
-            
-            public PlayerPropertiesWrapper(PlayerData playerData)
+            private WeaponData _weapon;
+
+            public WeaponPropertiesWrapper(WeaponData weapon)
             {
-                _playerData = playerData;
+                _weapon = weapon;
             }
-            
+
             [System.ComponentModel.Category("Position")]
-            [System.ComponentModel.Description("X position in pixels")]
+            [System.ComponentModel.Description("X coordinate in world space (pixels)")]
             public float X
             {
-                get => _playerData.X;
-                set => _playerData.X = value;
+                get => _weapon.X;
+                set => _weapon.X = value;
             }
-            
+
             [System.ComponentModel.Category("Position")]
-            [System.ComponentModel.Description("Y position in pixels")]
+            [System.ComponentModel.Description("Y coordinate in world space (pixels)")]
             public float Y
             {
-                get => _playerData.Y;
-                set => _playerData.Y = value;
+                get => _weapon.Y;
+                set => _weapon.Y = value;
+            }
+
+            [System.ComponentModel.Category("Weapon")]
+            [System.ComponentModel.Description("Weapon type (read-only, determined by weapon class)")]
+            [System.ComponentModel.ReadOnly(true)]
+            public string Type
+            {
+                get => _weapon.Type;
             }
             
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Walking speed in pixels per second")]
-            public float WalkSpeed
+            [System.ComponentModel.Category("Weapon")]
+            [System.ComponentModel.Description("Weapon name")]
+            public string Name
             {
-                get => _playerData.WalkSpeed;
-                set => _playerData.WalkSpeed = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Running speed in pixels per second")]
-            public float RunSpeed
-            {
-                get => _playerData.RunSpeed;
-                set => _playerData.RunSpeed = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Sneak speed multiplier (applied to walk speed)")]
-            public float SneakSpeedMultiplier
-            {
-                get => _playerData.SneakSpeedMultiplier;
-                set => _playerData.SneakSpeedMultiplier = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Distance threshold for reaching target (pixels)")]
-            public float StopThreshold
-            {
-                get => _playerData.StopThreshold;
-                set => _playerData.StopThreshold = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Distance at which player starts slowing down (pixels)")]
-            public float SlowdownRadius
-            {
-                get => _playerData.SlowdownRadius;
-                set => _playerData.SlowdownRadius = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Distance threshold for final target when sneaking (pixels)")]
-            public float SneakStopThreshold
-            {
-                get => _playerData.SneakStopThreshold;
-                set => _playerData.SneakStopThreshold = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Distance threshold for final target when running (pixels)")]
-            public float RunStopThreshold
-            {
-                get => _playerData.RunStopThreshold;
-                set => _playerData.RunStopThreshold = value;
+                get => _weapon.Name;
+                set => _weapon.Name = value;
             }
             
             [System.ComponentModel.Category("Combat")]
-            [System.ComponentModel.Description("Damage dealt by player per attack")]
-            public float AttackDamage
+            [System.ComponentModel.Description("Damage dealt by this weapon")]
+            public float Damage
             {
-                get => _playerData.AttackDamage;
-                set => _playerData.AttackDamage = value;
+                get => _weapon.Damage;
+                set => _weapon.Damage = value;
             }
             
-            [System.ComponentModel.Category("Health")]
-            [System.ComponentModel.Description("Maximum health")]
-            public float MaxHealth
+            [System.ComponentModel.Category("Combat")]
+            [System.ComponentModel.Description("Knockback/stun duration in seconds when enemy is hit")]
+            public float KnockbackDuration
             {
-                get => _playerData.MaxHealth;
-                set => _playerData.MaxHealth = value;
-            }
-            
-            [System.ComponentModel.Category("Respawn")]
-            [System.ComponentModel.Description("Respawn countdown duration in seconds")]
-            public float RespawnCountdown
-            {
-                get => _playerData.RespawnCountdown;
-                set => _playerData.RespawnCountdown = value;
+                get => _weapon.KnockbackDuration;
+                set => _weapon.KnockbackDuration = value;
             }
             
             [System.ComponentModel.Category("Visual")]
-            [System.ComponentModel.Description("Death pulse speed (pulses per second)")]
-            public float DeathPulseSpeed
+            [System.ComponentModel.Description("Weapon color red component (0-255)")]
+            public int WeaponColorR
             {
-                get => _playerData.DeathPulseSpeed;
-                set => _playerData.DeathPulseSpeed = value;
+                get => _weapon.WeaponColorR;
+                set => _weapon.WeaponColorR = Math.Clamp(value, 0, 255);
             }
             
             [System.ComponentModel.Category("Visual")]
-            [System.ComponentModel.Description("Current rotation in radians")]
-            public float Rotation
+            [System.ComponentModel.Description("Weapon color green component (0-255)")]
+            public int WeaponColorG
             {
-                get => _playerData.Rotation;
-                set => _playerData.Rotation = value;
+                get => _weapon.WeaponColorG;
+                set => _weapon.WeaponColorG = Math.Clamp(value, 0, 255);
+            }
+            
+            [System.ComponentModel.Category("Visual")]
+            [System.ComponentModel.Description("Weapon color blue component (0-255)")]
+            public int WeaponColorB
+            {
+                get => _weapon.WeaponColorB;
+                set => _weapon.WeaponColorB = Math.Clamp(value, 0, 255);
+            }
+            
+            // Gun-specific properties (only shown for GunData)
+            [System.ComponentModel.Category("Gun Properties")]
+            [System.ComponentModel.Description("Projectile speed in pixels per second (Gun only)")]
+            [System.ComponentModel.Browsable(false)] // Hidden by default, shown via GunPropertiesWrapper
+            public float? ProjectileSpeed
+            {
+                get => _weapon is GunData gunData ? gunData.ProjectileSpeed : null;
+                set
+                {
+                    if (_weapon is GunData gunData && value.HasValue)
+                    {
+                        gunData.ProjectileSpeed = value.Value;
+                    }
+                }
+            }
+            
+            [System.ComponentModel.Category("Gun Properties")]
+            [System.ComponentModel.Description("Fire rate in shots per second (Gun only)")]
+            [System.ComponentModel.Browsable(false)] // Hidden by default, shown via GunPropertiesWrapper
+            public float? FireRate
+            {
+                get => _weapon is GunData gunData ? gunData.FireRate : null;
+                set
+                {
+                    if (_weapon is GunData gunData && value.HasValue)
+                    {
+                        gunData.FireRate = value.Value;
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Wrapper class specifically for GunData to show gun-specific properties
+        /// </summary>
+        private class GunPropertiesWrapper : WeaponPropertiesWrapper
+        {
+            private GunData _gunData;
+            
+            public GunPropertiesWrapper(GunData gunData) : base(gunData)
+            {
+                _gunData = gunData;
+            }
+            
+            [System.ComponentModel.Category("Gun Properties")]
+            [System.ComponentModel.Description("Projectile speed in pixels per second")]
+            public new float ProjectileSpeed
+            {
+                get => _gunData.ProjectileSpeed;
+                set => _gunData.ProjectileSpeed = value;
+            }
+            
+            [System.ComponentModel.Category("Gun Properties")]
+            [System.ComponentModel.Description("Fire rate in shots per second")]
+            public new float FireRate
+            {
+                get => _gunData.FireRate;
+                set => _gunData.FireRate = value;
             }
         }
     }

@@ -25,10 +25,15 @@ namespace Project9.Editor
         private bool _isDragging;
         private EnemyData? _draggedEnemy;
         private CameraData? _draggedCamera;
+        private WeaponData? _draggedWeapon;
         private bool _isDraggingPlayer;
         private PointF _dragOffset;
+        private bool _isPanningCamera = false;
+        private Point _panStartMousePosition;
         private bool _showGrid64x32 = false;
         private bool _collisionMode = false;
+        private bool _showEnemyCones = true;
+        private bool _showCameraCones = true;
         private List<CollisionCellData> _collisionCells = new List<CollisionCellData>();
         private PointF? _collisionHoverPosition = null; // Snapped grid position for collision hover preview
         private float _tileOpacity = 0.7f; // Default opacity for placed tiles (0.0 to 1.0)
@@ -64,6 +69,26 @@ namespace Project9.Editor
                     // Clear collision hover when disabling collision mode
                     _collisionHoverPosition = null;
                 }
+                Invalidate();
+            }
+        }
+
+        public bool ShowEnemyCones
+        {
+            get => _showEnemyCones;
+            set
+            {
+                _showEnemyCones = value;
+                Invalidate();
+            }
+        }
+
+        public bool ShowCameraCones
+        {
+            get => _showCameraCones;
+            set
+            {
+                _showCameraCones = value;
                 Invalidate();
             }
         }
@@ -118,6 +143,16 @@ namespace Project9.Editor
         protected virtual void OnCameraRightClicked(CameraData camera, int index)
         {
             CameraRightClicked?.Invoke(this, new CameraRightClickedEventArgs(camera, index));
+        }
+        
+        /// <summary>
+        /// Event raised when a weapon is right-clicked
+        /// </summary>
+        public event EventHandler<WeaponRightClickedEventArgs>? WeaponRightClicked;
+
+        protected virtual void OnWeaponRightClicked(WeaponData weapon)
+        {
+            WeaponRightClicked?.Invoke(this, new WeaponRightClickedEventArgs(weapon));
         }
 
         public MapRenderControl()
@@ -391,7 +426,13 @@ namespace Project9.Editor
                 // Snap to 64x32 grid
                 targetPos = SnapToGrid(targetPos);
                 
-                if (_isDraggingPlayer && _mapData.MapData.Player != null)
+                if (_draggedWeapon != null)
+                {
+                    _draggedWeapon.X = targetPos.X;
+                    _draggedWeapon.Y = targetPos.Y;
+                    Invalidate();
+                }
+                else if (_isDraggingPlayer && _mapData.MapData.Player != null)
                 {
                     _mapData.MapData.Player.X = targetPos.X;
                     _mapData.MapData.Player.Y = targetPos.Y;
@@ -409,6 +450,28 @@ namespace Project9.Editor
                     _draggedCamera.Y = targetPos.Y;
                     Invalidate();
                 }
+            }
+            else if (_isPanningCamera)
+            {
+                // Calculate mouse delta
+                int deltaX = e.X - _panStartMousePosition.X;
+                int deltaY = e.Y - _panStartMousePosition.Y;
+                
+                // Convert screen delta to world delta (accounting for zoom)
+                // Moving mouse right should move camera left (pan right in world)
+                float worldDeltaX = -deltaX / _camera.Zoom;
+                float worldDeltaY = -deltaY / _camera.Zoom;
+                
+                // Update camera position
+                _camera.Position = new PointF(
+                    _camera.Position.X + worldDeltaX,
+                    _camera.Position.Y + worldDeltaY
+                );
+                
+                // Update start position for next move
+                _panStartMousePosition = e.Location;
+                
+                Invalidate();
             }
             else if (_collisionMode)
             {
@@ -582,9 +645,37 @@ namespace Project9.Editor
 
         private void MapRenderControl_MouseDown(object? sender, MouseEventArgs e)
         {
+            if (e.Button == MouseButtons.Middle)
+            {
+                // Start panning the camera
+                _isPanningCamera = true;
+                _panStartMousePosition = e.Location;
+                this.Cursor = Cursors.Hand;
+                return;
+            }
+            
             if (e.Button == MouseButtons.Left)
             {
                 PointF worldPos = ScreenToWorld(e.Location);
+                
+                // Check if clicking on weapon (check weapons first since they're smaller)
+                if (_mapData.MapData.Weapons != null)
+                {
+                    foreach (var weapon in _mapData.MapData.Weapons)
+                    {
+                        float weaponScreenX = weapon.X;
+                        float weaponScreenY = weapon.Y;
+                        float distance = (float)Math.Sqrt(Math.Pow(worldPos.X - weaponScreenX, 2) + Math.Pow(worldPos.Y - weaponScreenY, 2));
+                        if (distance < 50) // Click radius
+                        {
+                            _draggedWeapon = weapon;
+                            _isDragging = true;
+                            _dragOffset = new PointF(worldPos.X - weaponScreenX, worldPos.Y - weaponScreenY);
+                            Invalidate();
+                            return;
+                        }
+                    }
+                }
                 
                 // Check if clicking on player
                 if (_mapData.MapData.Player != null)
@@ -725,6 +816,30 @@ namespace Project9.Editor
                         }
                     }
                     
+                    // Right click on weapon: Open properties window
+                    if (_mapData.MapData.Weapons != null)
+                    {
+                        WeaponData? clickedWeapon = null;
+                        foreach (var weapon in _mapData.MapData.Weapons)
+                        {
+                            float weaponScreenX = weapon.X;
+                            float weaponScreenY = weapon.Y;
+                            float distance = (float)Math.Sqrt(Math.Pow(worldPos.X - weaponScreenX, 2) + Math.Pow(worldPos.Y - weaponScreenY, 2));
+                            if (distance < 50) // Click radius
+                            {
+                                clickedWeapon = weapon;
+                                break;
+                            }
+                        }
+                        
+                        // Raise event for weapon right-click
+                        if (clickedWeapon != null)
+                        {
+                            OnWeaponRightClicked(clickedWeapon);
+                            return;
+                        }
+                    }
+                    
                     // Right click on enemy: Open properties window
                     // Check if clicking on any enemy
                     EnemyData? clickedEnemy = null;
@@ -751,12 +866,22 @@ namespace Project9.Editor
 
         private void MapRenderControl_MouseUp(object? sender, MouseEventArgs e)
         {
+            if (e.Button == MouseButtons.Middle)
+            {
+                // Stop panning the camera
+                _isPanningCamera = false;
+                this.Cursor = Cursors.Default;
+                Invalidate();
+                return;
+            }
+            
             if (e.Button == MouseButtons.Left)
             {
                 _isDragging = false;
                 _isDraggingPlayer = false;
                 _draggedEnemy = null;
                 _draggedCamera = null;
+                _draggedWeapon = null;
                 Invalidate();
             }
         }
@@ -780,21 +905,23 @@ namespace Project9.Editor
                 // Draw semi-transparent preview (same position as regular tiles)
                 using (System.Drawing.Imaging.ImageAttributes imageAttributes = new System.Drawing.Imaging.ImageAttributes())
                 {
+                    // For hover preview, use 0.5f opacity but preserve original alpha channel
                     System.Drawing.Imaging.ColorMatrix colorMatrix = new System.Drawing.Imaging.ColorMatrix(new float[][]
                     {
                         new float[] {1, 0, 0, 0, 0},
                         new float[] {0, 1, 0, 0, 0},
                         new float[] {0, 0, 1, 0, 0},
-                        new float[] {0, 0, 0, 0.5f, 0},
+                        new float[] {0, 0, 0, 0.5f, 0}, // Multiply alpha by 0.5 for hover preview
                         new float[] {0, 0, 0, 0, 1}
                     });
-                    imageAttributes.SetColorMatrix(colorMatrix);
+                    imageAttributes.SetColorMatrix(colorMatrix, System.Drawing.Imaging.ColorMatrixFlag.Default, System.Drawing.Imaging.ColorAdjustType.Bitmap);
+                    imageAttributes.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY); // Prevent edge artifacts
                     
                     // All tiles place at grid corner point
                     // screenX, screenY is the grid corner (top of isometric diamond)
                     // Draw tiles at their natural position - top of diamond at grid corner
                     
-                    if (_selectedTerrainType == TerrainType.Test)
+                    if (_selectedTerrainType == TerrainType.Test || _selectedTerrainType == TerrainType.Test2)
                     {
                         // Test tiles: 1024x1024, but bottom 1024x512 is the diamond, top 512 is overdraw
                         // Grid corner (screenX, screenY) should align with bottom of diamond
@@ -869,6 +996,8 @@ namespace Project9.Editor
             g.SmoothingMode = SmoothingMode.None;
             g.InterpolationMode = InterpolationMode.NearestNeighbor;
             g.PixelOffsetMode = PixelOffsetMode.None; // Changed to None for pixel-perfect alignment
+            g.CompositingMode = CompositingMode.SourceOver; // Ensure proper alpha blending
+            g.CompositingQuality = CompositingQuality.HighQuality; // High quality alpha blending
 
             // Check if map data is initialized
             if (_mapData == null || _mapData.Width == 0 || _mapData.Height == 0)
@@ -927,41 +1056,56 @@ namespace Project9.Editor
                     // screenX, screenY is the grid corner (top of isometric diamond)
                     // Draw tiles at their natural position - top of diamond at grid corner
                     
-                    if (tile.type == TerrainType.Test)
+                    if (tile.type == TerrainType.Test || tile.type == TerrainType.Test2)
                     {
-                        using (System.Drawing.Imaging.ImageAttributes imageAttributes = new System.Drawing.Imaging.ImageAttributes())
+                        // Test tiles: 1024x1024, but bottom 1024x512 is the diamond, top 512 is overdraw
+                        // Grid corner (screenX, screenY) should align with bottom of diamond
+                        // TileToScreen returns the top point, which is centered horizontally
+                        // Offset upward by TileHeight + overdraw to align bottom diamond with grid corner
+                        float overdrawHeight = texture.Height - IsometricMath.TileHeight; // 512 for Test tile
+                        float totalOffset = IsometricMath.TileHeight + overdrawHeight; // 512 + 512 = 1024
+                        
+                        // Center horizontally: TileToScreen returns center, so offset by half width
+                        float drawX = screenX - (texture.Width / 2.0f);
+                        float drawY = screenY - totalOffset; // Move up to align bottom diamond
+                        
+                        // Round to nearest pixel for perfect alignment
+                        int finalDrawX = (int)Math.Round(drawX);
+                        int finalDrawY = (int)Math.Round(drawY);
+                        
+                        // Draw with transparency support - always use the bitmap's natural alpha channel
+                        // If opacity is less than 1.0, apply it via ImageAttributes
+                        if (_tileOpacity >= 0.999f)
                         {
-                            System.Drawing.Imaging.ColorMatrix colorMatrix = new System.Drawing.Imaging.ColorMatrix(new float[][]
+                            // Full opacity - draw directly to preserve transparency naturally
+                            // The bitmap's alpha channel will be used for transparency
+                            g.DrawImage(texture, finalDrawX, finalDrawY, texture.Width, texture.Height);
+                        }
+                        else
+                        {
+                            // Apply opacity using ImageAttributes
+                            using (System.Drawing.Imaging.ImageAttributes imageAttributes = new System.Drawing.Imaging.ImageAttributes())
                             {
-                                new float[] {1, 0, 0, 0, 0},
-                                new float[] {0, 1, 0, 0, 0},
-                                new float[] {0, 0, 1, 0, 0},
-                                new float[] {0, 0, 0, _tileOpacity, 0}, // Use configurable opacity
-                                new float[] {0, 0, 0, 0, 1}
-                            });
-                            imageAttributes.SetColorMatrix(colorMatrix);
-                            
-                            // Test tiles: 1024x1024, but bottom 1024x512 is the diamond, top 512 is overdraw
-                            // Grid corner (screenX, screenY) should align with bottom of diamond
-                            // TileToScreen returns the top point, which is centered horizontally
-                            // Offset upward by TileHeight + overdraw to align bottom diamond with grid corner
-                            float overdrawHeight = texture.Height - IsometricMath.TileHeight; // 512 for Test tile
-                            float totalOffset = IsometricMath.TileHeight + overdrawHeight; // 512 + 512 = 1024
-                            
-                            // Center horizontally: TileToScreen returns center, so offset by half width
-                            float drawX = screenX - (texture.Width / 2.0f);
-                            float drawY = screenY - totalOffset; // Move up to align bottom diamond
-                            
-                            // Round to nearest pixel for perfect alignment
-                            int finalDrawX = (int)Math.Round(drawX);
-                            int finalDrawY = (int)Math.Round(drawY);
-                            
-                            g.DrawImage(
-                                texture,
-                                new Rectangle(finalDrawX, finalDrawY, texture.Width, texture.Height),
-                                0, 0, texture.Width, texture.Height,
-                                System.Drawing.GraphicsUnit.Pixel,
-                                imageAttributes);
+                                // ColorMatrix that multiplies existing alpha by opacity setting
+                                // This preserves per-pixel transparency while applying the opacity slider
+                                System.Drawing.Imaging.ColorMatrix colorMatrix = new System.Drawing.Imaging.ColorMatrix(new float[][]
+                                {
+                                    new float[] {1, 0, 0, 0, 0},
+                                    new float[] {0, 1, 0, 0, 0},
+                                    new float[] {0, 0, 1, 0, 0},
+                                    new float[] {0, 0, 0, _tileOpacity, 0}, // Multiply alpha channel by opacity
+                                    new float[] {0, 0, 0, 0, 1}
+                                });
+                                imageAttributes.SetColorMatrix(colorMatrix, System.Drawing.Imaging.ColorMatrixFlag.Default, System.Drawing.Imaging.ColorAdjustType.Bitmap);
+                                imageAttributes.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY); // Prevent edge artifacts
+                                
+                                g.DrawImage(
+                                    texture,
+                                    new Rectangle(finalDrawX, finalDrawY, texture.Width, texture.Height),
+                                    0, 0, texture.Width, texture.Height,
+                                    System.Drawing.GraphicsUnit.Pixel,
+                                    imageAttributes);
+                            }
                         }
                     }
                     else
@@ -1026,7 +1170,7 @@ namespace Project9.Editor
                 for (int i = 0; i < _mapData.MapData.Weapons.Count; i++)
                 {
                     var weapon = _mapData.MapData.Weapons[i];
-                    DrawWeapon(g, weapon, i);
+                    DrawWeapon(g, weapon, weapon == _draggedWeapon, i);
                 }
             }
 
@@ -1251,6 +1395,47 @@ namespace Project9.Editor
                 g.DrawPolygon(pen, diamondPoints);
             }
             
+            // Draw sight cone preview - only if ShowEnemyCones is enabled
+            if (_showEnemyCones)
+            {
+                // Calculate sight cone length (use SightConeLength if set, otherwise DetectionRange * 0.8)
+                float coneLength = enemy.SightConeLength > 0 
+                    ? enemy.SightConeLength 
+                    : enemy.DetectionRange * 0.8f;
+                
+                float coneAngleRad = enemy.Rotation;
+                float halfAngleRad = (enemy.SightConeAngle * MathF.PI / 180.0f) / 2.0f;
+                
+                // Calculate cone edges
+                float leftAngle = coneAngleRad - halfAngleRad;
+                float rightAngle = coneAngleRad + halfAngleRad;
+                
+                float leftEndX = centerX + (float)Math.Cos(leftAngle) * coneLength;
+                float leftEndY = centerY + (float)Math.Sin(leftAngle) * coneLength;
+                float rightEndX = centerX + (float)Math.Cos(rightAngle) * coneLength;
+                float rightEndY = centerY + (float)Math.Sin(rightAngle) * coneLength;
+                
+                // Draw sight cone as a filled triangle
+                PointF[] conePoints = new PointF[]
+                {
+                    new PointF(centerX, centerY),
+                    new PointF(leftEndX, leftEndY),
+                    new PointF(rightEndX, rightEndY)
+                };
+                
+                using (SolidBrush coneBrush = new SolidBrush(Color.FromArgb(80, Color.Yellow)))
+                {
+                    g.FillPolygon(coneBrush, conePoints);
+                }
+                
+                using (Pen conePen = new Pen(Color.FromArgb(150, Color.Yellow), 2))
+                {
+                    g.DrawLine(conePen, centerX, centerY, leftEndX, leftEndY);
+                    g.DrawLine(conePen, centerX, centerY, rightEndX, rightEndY);
+                    g.DrawLine(conePen, leftEndX, leftEndY, rightEndX, rightEndY);
+                }
+            }
+            
             // Draw label above the enemy - use name from JSON if available, otherwise use index
             string label;
             if (!string.IsNullOrWhiteSpace(enemy.Name))
@@ -1349,14 +1534,16 @@ namespace Project9.Editor
             }
         }
 
-        private void DrawWeapon(Graphics g, WeaponData weapon, int index)
+        private void DrawWeapon(Graphics g, WeaponData weapon, bool isDragging, int index)
         {
             float centerX = weapon.X;
             float centerY = weapon.Y;
             
-            // Determine weapon type and color
-            bool isGun = weapon.Type.ToLower() == "gun";
-            Color weaponColor = isGun ? Color.DarkGray : Color.Silver;
+            // Determine weapon type and color based on data type
+            bool isGun = weapon is GunData;
+            Color weaponColor = isDragging 
+                ? (isGun ? Color.Orange : Color.Yellow) 
+                : (isGun ? Color.DarkGray : Color.Silver);
             
             // Isometric diamond dimensions (smaller than entities)
             float halfWidth = 12.0f;  // Half width of the isometric box (24 total)
@@ -1437,15 +1624,50 @@ namespace Project9.Editor
                 g.DrawPolygon(pen, diamondPoints);
             }
             
-            // Draw sight cone preview (as a line in the rotation direction)
-            float coneLength = camera.DetectionRange;
-            float coneAngleRad = camera.Rotation;
-            float endX = centerX + (float)Math.Cos(coneAngleRad) * coneLength;
-            float endY = centerY + (float)Math.Sin(coneAngleRad) * coneLength;
-            
-            using (Pen conePen = new Pen(Color.FromArgb(150, Color.Cyan), 3))
+            // Draw sight cone preview - only if ShowCameraCones is enabled
+            if (_showCameraCones)
             {
-                g.DrawLine(conePen, centerX, centerY, endX, endY);
+                // Calculate sight cone length (use CameraSightConeLength if set, otherwise DetectionRange)
+                // This matches the game's logic in Camera.cs
+                float coneLength = camera.CameraSightConeLength > 0 
+                    ? camera.CameraSightConeLength 
+                    : camera.DetectionRange;
+                
+                float coneAngleRad = camera.Rotation;
+                // Use SightConeAngle (inherited from Enemy) for the cone angle, not SweepAngle
+                // SweepAngle is for rotation behavior, SightConeAngle is for detection cone
+                // This matches the game's CreateSightConeTexture which uses SightConeAngle
+                float sightConeAngleDeg = camera.SightConeAngle > 0 ? camera.SightConeAngle : 60.0f;
+                float halfAngleRad = (sightConeAngleDeg * MathF.PI / 180.0f) / 2.0f;
+                
+                // Calculate cone edges
+                float leftAngle = coneAngleRad - halfAngleRad;
+                float rightAngle = coneAngleRad + halfAngleRad;
+                
+                float leftEndX = centerX + (float)Math.Cos(leftAngle) * coneLength;
+                float leftEndY = centerY + (float)Math.Sin(leftAngle) * coneLength;
+                float rightEndX = centerX + (float)Math.Cos(rightAngle) * coneLength;
+                float rightEndY = centerY + (float)Math.Sin(rightAngle) * coneLength;
+                
+                // Draw sight cone as a filled triangle (cyan/blue shade for cameras)
+                PointF[] conePoints = new PointF[]
+                {
+                    new PointF(centerX, centerY),
+                    new PointF(leftEndX, leftEndY),
+                    new PointF(rightEndX, rightEndY)
+                };
+                
+                using (SolidBrush coneBrush = new SolidBrush(Color.FromArgb(80, Color.Cyan)))
+                {
+                    g.FillPolygon(coneBrush, conePoints);
+                }
+                
+                using (Pen conePen = new Pen(Color.FromArgb(150, Color.Cyan), 2))
+                {
+                    g.DrawLine(conePen, centerX, centerY, leftEndX, leftEndY);
+                    g.DrawLine(conePen, centerX, centerY, rightEndX, rightEndY);
+                    g.DrawLine(conePen, leftEndX, leftEndY, rightEndX, rightEndY);
+                }
             }
             
             // Draw label above the camera - use name from JSON if available, otherwise use index

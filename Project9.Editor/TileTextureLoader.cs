@@ -20,8 +20,8 @@ namespace Project9.Editor
             foreach (TerrainType terrainType in Enum.GetValues<TerrainType>())
             {
                 string texturePath;
-                // Test tile is in the test folder, others are in template folder
-                if (terrainType == TerrainType.Test)
+                // Test tiles are in the test folder, others are in template folder
+                if (terrainType == TerrainType.Test || terrainType == TerrainType.Test2)
                 {
                     texturePath = $"Content/sprites/tiles/test/{terrainType}.png";
                 }
@@ -36,8 +36,19 @@ namespace Project9.Editor
                 {
                     try
                     {
-                        _textures[terrainType] = new Bitmap(resolvedPath);
-                        Console.WriteLine($"[TileTextureLoader] Loaded {terrainType} from {resolvedPath}");
+                        // Load image preserving alpha channel for transparency support
+                        using (Image originalImage = Image.FromFile(resolvedPath))
+                        {
+                            // Create bitmap with 32-bit ARGB format to preserve alpha channel
+                            Bitmap bitmap = new Bitmap(originalImage.Width, originalImage.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                            using (Graphics g = Graphics.FromImage(bitmap))
+                            {
+                                g.Clear(Color.Transparent); // Clear with transparent background
+                                g.DrawImage(originalImage, 0, 0); // Draw the original image (preserves alpha)
+                            }
+                            _textures[terrainType] = bitmap;
+                            Console.WriteLine($"[TileTextureLoader] Loaded {terrainType} from {resolvedPath} (Format: {bitmap.PixelFormat})");
+                        }
                     }
                     catch (Exception ex)
                     {

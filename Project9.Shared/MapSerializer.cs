@@ -12,7 +12,10 @@ namespace Project9.Shared
         {
             WriteIndented = true,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            Converters = { new JsonStringEnumConverter(allowIntegerValues: true) }
+            Converters = { 
+                new JsonStringEnumConverter(allowIntegerValues: true),
+                new WeaponDataJsonConverter()
+            }
         };
 
         /// <summary>

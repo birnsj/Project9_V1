@@ -405,7 +405,7 @@ namespace Project9.Editor
                 {
                     if (this.InvokeRequired)
                     {
-                        this.Invoke(async () => await CheckConnectionAsync());
+                        this.Invoke(new Action(async () => await CheckConnectionAsync()));
                     }
                     else
                     {

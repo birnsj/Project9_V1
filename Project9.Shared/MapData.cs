@@ -171,18 +171,87 @@ namespace Project9.Shared
     }
 
     /// <summary>
-    /// Represents a weapon spawn position in the map for JSON serialization
+    /// Base class for weapon spawn positions in the map for JSON serialization
     /// </summary>
-    public class WeaponData
+    public abstract class WeaponData
     {
-        [JsonPropertyName("type")]
-        public string Type { get; set; } = "sword"; // "sword", etc.
-
         [JsonPropertyName("x")]
         public float X { get; set; }
 
         [JsonPropertyName("y")]
         public float Y { get; set; }
+        
+        /// <summary>
+        /// Get the weapon type name for serialization
+        /// </summary>
+        [JsonPropertyName("type")]
+        public abstract string Type { get; }
+        
+        // Base weapon properties
+        [JsonPropertyName("damage")]
+        public float Damage { get; set; }
+        
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = "";
+        
+        [JsonPropertyName("weaponColorR")]
+        public int WeaponColorR { get; set; }
+        
+        [JsonPropertyName("weaponColorG")]
+        public int WeaponColorG { get; set; }
+        
+        [JsonPropertyName("weaponColorB")]
+        public int WeaponColorB { get; set; }
+        
+        [JsonPropertyName("knockbackDuration")]
+        public float KnockbackDuration { get; set; }
+    }
+
+    /// <summary>
+    /// Represents a sword weapon spawn position
+    /// </summary>
+    public class SwordData : WeaponData
+    {
+        public override string Type => "sword";
+        
+        public SwordData()
+        {
+            // Default values for sword
+            Damage = 20.0f;
+            Name = "Sword";
+            WeaponColorR = 192; // Silver color RGB
+            WeaponColorG = 192;
+            WeaponColorB = 192;
+            KnockbackDuration = 0.5f;
+        }
+    }
+
+    /// <summary>
+    /// Represents a gun weapon spawn position
+    /// </summary>
+    public class GunData : WeaponData
+    {
+        public override string Type => "gun";
+        
+        // Gun-specific properties
+        [JsonPropertyName("projectileSpeed")]
+        public float ProjectileSpeed { get; set; }
+        
+        [JsonPropertyName("fireRate")]
+        public float FireRate { get; set; }
+        
+        public GunData()
+        {
+            // Default values for gun
+            Damage = 15.0f;
+            Name = "Gun";
+            WeaponColorR = 169; // DarkGray color RGB
+            WeaponColorG = 169;
+            WeaponColorB = 169;
+            KnockbackDuration = 0.4f;
+            ProjectileSpeed = 500.0f;
+            FireRate = 6.0f; // 6 shots per second
+        }
     }
 
     /// <summary>

@@ -11,22 +11,22 @@ namespace Project9
         /// <summary>
         /// The damage this weapon deals
         /// </summary>
-        public abstract float Damage { get; }
+        public float Damage { get; set; }
 
         /// <summary>
         /// The name of the weapon
         /// </summary>
-        public abstract string Name { get; }
+        public string Name { get; set; } = "";
 
         /// <summary>
         /// The color used to render the weapon on the ground
         /// </summary>
-        public abstract Color WeaponColor { get; }
+        public Color WeaponColor { get; set; }
         
         /// <summary>
         /// Knockback/stun duration in seconds when enemy is hit
         /// </summary>
-        public abstract float KnockbackDuration { get; }
+        public float KnockbackDuration { get; set; }
     }
 }
 

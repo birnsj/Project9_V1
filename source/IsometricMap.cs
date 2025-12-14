@@ -38,8 +38,8 @@ namespace Project9
             foreach (TerrainType terrainType in Enum.GetValues<TerrainType>())
             {
                 string texturePath;
-                // Test tile is in the test folder, others are in template folder
-                if (terrainType == TerrainType.Test)
+                // Test tiles are in the test folder, others are in template folder
+                if (terrainType == TerrainType.Test || terrainType == TerrainType.Test2)
                 {
                     texturePath = $"sprites/tiles/test/{terrainType}";
                 }

@@ -121,20 +121,27 @@ namespace Project9
                 foreach (var weaponData in mapData.Weapons)
                 {
                     Weapon weapon;
-                    // Create weapon based on type
-                    switch (weaponData.Type.ToLower())
+                    // Create weapon based on data type with properties from data
+                    Color weaponColor = new Color(weaponData.WeaponColorR, weaponData.WeaponColorG, weaponData.WeaponColorB);
+                    
+                    weapon = weaponData switch
                     {
-                        case "sword":
-                            weapon = new Sword();
-                            break;
-                        case "gun":
-                            weapon = new Gun();
-                            break;
-                        default:
-                            Console.WriteLine($"[EntityManager] Unknown weapon type: {weaponData.Type}, defaulting to Sword");
-                            weapon = new Sword();
-                            break;
-                    }
+                        Project9.Shared.SwordData swordData => new Sword(
+                            swordData.Damage,
+                            string.IsNullOrEmpty(swordData.Name) ? "Sword" : swordData.Name,
+                            weaponColor,
+                            swordData.KnockbackDuration
+                        ),
+                        Project9.Shared.GunData gunData => new Gun(
+                            gunData.Damage,
+                            string.IsNullOrEmpty(gunData.Name) ? "Gun" : gunData.Name,
+                            weaponColor,
+                            gunData.KnockbackDuration,
+                            gunData.ProjectileSpeed,
+                            gunData.FireRate
+                        ),
+                        _ => throw new InvalidOperationException($"Unknown weapon data type: {weaponData.GetType().Name}")
+                    };
                     
                     Vector2 weaponPosition = new Vector2(weaponData.X, weaponData.Y);
                     _weaponPickups.Add(new WeaponPickup(weaponPosition, weapon));

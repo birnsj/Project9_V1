@@ -40,7 +40,7 @@ namespace Project9
                 // All tiles align bottom of diamond with grid corner
                 // position is the grid corner - where bottom of diamond should align
                 
-                if (TerrainType == TerrainType.Test)
+                if (TerrainType == TerrainType.Test || TerrainType == TerrainType.Test2)
                 {
                     // Test tiles: 1024x1024, but bottom 1024x512 is the diamond, top 512 is overdraw
                     // Grid corner (position) should align with bottom of diamond

@@ -395,7 +395,7 @@ namespace Project9.Editor
                 }
 
                 // Helper function to convert JsonElement to proper .NET type
-                object ConvertJsonElement(JsonElement element)
+                object? ConvertJsonElement(JsonElement element)
                 {
                     try
                     {
@@ -472,7 +472,8 @@ namespace Project9.Editor
                                             }
                                             else
                                             {
-                                                node[nodeProp.Name] = ConvertJsonElement(nodeProp.Value);
+                                                var converted = ConvertJsonElement(nodeProp.Value);
+                                                node[nodeProp.Name] = converted ?? "";
                                             }
                                         }
                                         else if (nodeProp.Name == "inputs" && nodeProp.Value.ValueKind == JsonValueKind.Object)
@@ -497,15 +498,19 @@ namespace Project9.Editor
                                                         {
                                                             // If filename_prefix is not a string, convert it and then modify
                                                             // This handles cases where it might be an object or array
-                                                            object prefixValue = ConvertJsonElement(inputProp.Value);
+                                                            object? prefixValue = ConvertJsonElement(inputProp.Value);
                                                             if (prefixValue is string prefixStr)
                                                             {
                                                                 inputs[inputProp.Name] = absoluteOutputPath + prefixStr;
                                                             }
-                                                            else
+                                                            else if (prefixValue != null)
                                                             {
                                                                 // If it's not a string, just prepend the path somehow
                                                                 inputs[inputProp.Name] = absoluteOutputPath + prefixValue.ToString();
+                                                            }
+                                                            else
+                                                            {
+                                                                inputs[inputProp.Name] = absoluteOutputPath;
                                                             }
                                                         }
                                                     }
@@ -517,7 +522,8 @@ namespace Project9.Editor
                                                     else
                                                     {
                                                         // Copy other input properties using proper type conversion
-                                                        inputs[inputProp.Name] = ConvertJsonElement(inputProp.Value);
+                                                        var converted = ConvertJsonElement(inputProp.Value);
+                                                        inputs[inputProp.Name] = converted ?? "";
                                                     }
                                                 }
                                                 catch (Exception ex)
@@ -530,7 +536,8 @@ namespace Project9.Editor
                                         else
                                         {
                                             // Copy other properties using proper type conversion
-                                            node[nodeProp.Name] = ConvertJsonElement(nodeProp.Value);
+                                            var converted = ConvertJsonElement(nodeProp.Value);
+                                            node[nodeProp.Name] = converted ?? "";
                                         }
                                     }
                                     catch (Exception ex)
@@ -543,7 +550,8 @@ namespace Project9.Editor
                             }
                             else
                             {
-                                modifiedWorkflow[property.Name] = ConvertJsonElement(property.Value);
+                                var converted = ConvertJsonElement(property.Value);
+                                modifiedWorkflow[property.Name] = converted ?? "";
                             }
                         }
                         catch (Exception ex)
@@ -741,7 +749,7 @@ namespace Project9.Editor
                 try
                 {
                     // Check queue status with retry logic for connection issues
-                    HttpResponseMessage queueResponse = null;
+                    HttpResponseMessage? queueResponse = null;
                     int retryCount = 0;
                     const int maxRetries = 3;
                     

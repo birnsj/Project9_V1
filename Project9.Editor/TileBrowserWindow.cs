@@ -1,46 +1,38 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 using Project9.Shared;
 
 namespace Project9.Editor
 {
     /// <summary>
-    /// Dockable window for editing player properties
+    /// Window for browsing and selecting tiles
     /// </summary>
-    public class PlayerPropertiesWindow : Form
+    public class TileBrowserWindow : Form
     {
-        private PropertyGrid _propertyGrid = null!;
-        private PlayerData? _currentPlayer;
+        private Panel _tilesPanel = null!;
         private Button _dockButton = null!;
         private Label _titleLabel = null!;
-        private TextBox _nameTextBox = null!;
-        private Label _nameLabel = null!;
-        private Action? _onSaveCallback;
+        private TileTextureLoader? _textureLoader;
+        private MapRenderControl? _mapRenderControl;
+        private TerrainType _selectedTerrainType = TerrainType.Grass;
+        private PictureBox? _selectedTileBox = null;
         private bool _isDocked = false;
         private Form? _parentForm;
-        private MapRenderControl? _mapRenderControl;
         private bool _isDragging = false;
         private Point _dragStartPosition;
         private Point _dragStartMousePosition;
-        
+
         /// <summary>
         /// Event raised when docking state changes
         /// </summary>
         public event EventHandler? DockingChanged;
 
-        public PlayerData? CurrentPlayer
-        {
-            get => _currentPlayer;
-            set
-            {
-                _currentPlayer = value;
-                UpdatePropertyGrid();
-            }
-        }
+        public bool IsDocked => _isDocked;
 
-        public PlayerPropertiesWindow()
+        public TileBrowserWindow()
         {
             InitializeComponent();
         }
@@ -48,22 +40,28 @@ namespace Project9.Editor
         public void SetParentForm(Form parentForm)
         {
             _parentForm = parentForm;
-            // Subscribe to parent form resize to update docked position
             if (_parentForm != null)
             {
                 _parentForm.Resize += ParentForm_Resize;
             }
         }
-        
+
         public void SetMapRenderControl(MapRenderControl mapRenderControl)
         {
             _mapRenderControl = mapRenderControl;
+            if (_mapRenderControl != null)
+            {
+                _selectedTerrainType = _mapRenderControl.SelectedTerrainType;
+                UpdateSelectedTile();
+            }
         }
-        
-        public bool IsDocked => _isDocked;
-        
-        public int DockedWidth => _isDocked ? this.Width : 0;
-        
+
+        public void SetTextureLoader(TileTextureLoader textureLoader)
+        {
+            _textureLoader = textureLoader;
+            LoadTileImages();
+        }
+
         private void ParentForm_Resize(object? sender, EventArgs e)
         {
             // When docked in a panel, the panel handles resizing automatically via Dock.Fill
@@ -198,13 +196,11 @@ namespace Project9.Editor
                 this.Show();
             }
 
-            // Update button text
             if (_dockButton != null)
             {
                 _dockButton.Text = "Undock";
             }
 
-            // Notify that docking changed
             DockingChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -341,27 +337,25 @@ namespace Project9.Editor
             
             // Resume layout
             this.ResumeLayout(false);
-            
-            // Update button text
+
             if (_dockButton != null)
             {
                 _dockButton.Text = "Dock";
             }
-            
-            // Notify that docking changed
+
             DockingChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private void InitializeComponent()
         {
-            this.Text = "Player Properties";
-            this.Size = new Size(350, 500);
+            this.Text = "Tile Browser";
+            this.Size = new Size(300, 500);
             this.FormBorderStyle = FormBorderStyle.SizableToolWindow;
             this.ShowInTaskbar = false;
             this.StartPosition = FormStartPosition.Manual;
             this.BackColor = Color.FromArgb(240, 240, 240);
-            
-            // Title panel with gradient background
+
+            // Title panel
             Panel titlePanel = new Panel
             {
                 Dock = DockStyle.Top,
@@ -370,7 +364,6 @@ namespace Project9.Editor
             };
             titlePanel.Paint += (s, e) =>
             {
-                // Draw gradient background
                 using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
                     titlePanel.ClientRectangle,
                     Color.FromArgb(60, 60, 65),
@@ -379,16 +372,15 @@ namespace Project9.Editor
                 {
                     e.Graphics.FillRectangle(brush, titlePanel.ClientRectangle);
                 }
-                // Draw bottom border
                 using (var pen = new Pen(Color.FromArgb(30, 30, 30), 1))
                 {
                     e.Graphics.DrawLine(pen, 0, titlePanel.Height - 1, titlePanel.Width, titlePanel.Height - 1);
                 }
             };
-            
+
             _titleLabel = new Label
             {
-                Text = "Player Properties",
+                Text = "Tile Browser",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(12, 0, 0, 0),
@@ -396,9 +388,8 @@ namespace Project9.Editor
                 ForeColor = Color.White,
                 BackColor = Color.Transparent
             };
-            
-            // Modern styled dock button
-            Button dockButton = new Button
+
+            _dockButton = new Button
             {
                 Text = "Dock",
                 Dock = DockStyle.Right,
@@ -411,10 +402,10 @@ namespace Project9.Editor
                 Margin = new Padding(5, 5, 5, 5),
                 Cursor = Cursors.Hand
             };
-            dockButton.FlatAppearance.BorderSize = 0;
-            dockButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(70, 70, 75);
-            dockButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(50, 50, 55);
-            dockButton.Click += (s, e) =>
+            _dockButton.FlatAppearance.BorderSize = 0;
+            _dockButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(70, 70, 75);
+            _dockButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(50, 50, 55);
+            _dockButton.Click += (s, e) =>
             {
                 if (_isDocked)
                 {
@@ -424,129 +415,25 @@ namespace Project9.Editor
                 {
                     DockToRight();
                 }
-                // Update button text after state change
-                dockButton.Text = _isDocked ? "Undock" : "Dock";
+                _dockButton.Text = _isDocked ? "Undock" : "Dock";
             };
-            
-            // Store reference to update button text when docking changes
-            _dockButton = dockButton;
-            
-            titlePanel.Controls.Add(_titleLabel);
-            titlePanel.Controls.Add(dockButton);
-            
-            // Name field panel at the top
-            Panel namePanel = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 50,
-                BackColor = Color.FromArgb(250, 250, 250),
-                Padding = new Padding(10, 8, 10, 8)
-            };
-            namePanel.Paint += (s, e) =>
-            {
-                // Draw bottom border
-                using (var pen = new Pen(Color.FromArgb(220, 220, 220), 1))
-                {
-                    e.Graphics.DrawLine(pen, 0, namePanel.Height - 1, namePanel.Width, namePanel.Height - 1);
-                }
-            };
-            
-            _nameLabel = new Label
-            {
-                Text = "Name:",
-                Location = new Point(10, 12),
-                Size = new Size(50, 20),
-                Font = new Font("Segoe UI", 9),
-                ForeColor = Color.FromArgb(30, 30, 30)
-            };
-            
-            _nameTextBox = new TextBox
-            {
-                Location = new Point(65, 10),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                Width = namePanel.Width - 75,
-                Font = new Font("Segoe UI", 9),
-                BorderStyle = BorderStyle.FixedSingle
-            };
-            _nameTextBox.TextChanged += _nameTextBox_TextChanged;
-            
-            namePanel.Controls.Add(_nameLabel);
-            namePanel.Controls.Add(_nameTextBox);
-            this.Controls.Add(namePanel);
 
-            // Property grid with better styling
-            _propertyGrid = new PropertyGrid
+            titlePanel.Controls.Add(_titleLabel);
+            titlePanel.Controls.Add(_dockButton);
+
+            // Tiles panel with scrolling
+            _tilesPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                ToolbarVisible = true,
-                HelpVisible = true,
+                AutoScroll = true,
                 BackColor = Color.White,
-                ForeColor = Color.FromArgb(30, 30, 30),
-                Font = new Font("Segoe UI", 9),
-                LineColor = Color.FromArgb(230, 230, 230)
-            };
-            _propertyGrid.PropertyValueChanged += (s, e) =>
-            {
-                _onSaveCallback?.Invoke(); // Auto-save on change
-                // Update title if Name, X, or Y changed
-                if (_currentPlayer != null && (e.ChangedItem?.Label == "Name" || e.ChangedItem?.Label == "X" || e.ChangedItem?.Label == "Y"))
-                {
-                    UpdateTitle();
-                }
-            };
-            
-            // Enable drag-to-adjust for numeric properties
-            var dragHandler = new PropertyGridDragHandler(_propertyGrid, () =>
-            {
-                _onSaveCallback?.Invoke(); // Auto-save on change
-                _mapRenderControl?.Invalidate(); // Refresh the editor view
-            });
-            
-            // Bottom panel with save button
-            Panel bottomPanel = new Panel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 60,
-                BackColor = Color.FromArgb(250, 250, 250),
                 Padding = new Padding(10, 10, 10, 10)
             };
-            bottomPanel.Paint += (s, e) =>
-            {
-                // Draw top border
-                using (var pen = new Pen(Color.FromArgb(220, 220, 220), 1))
-                {
-                    e.Graphics.DrawLine(pen, 0, 0, bottomPanel.Width, 0);
-                }
-            };
-            
-            // Large save button (blue)
-            Button saveButton = new Button
-            {
-                Text = "Save",
-                Dock = DockStyle.Fill,
-                Height = 40,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(0, 120, 215),
-                Cursor = Cursors.Hand
-            };
-            saveButton.FlatAppearance.BorderSize = 0;
-            saveButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 150, 255);
-            saveButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(0, 100, 180);
-            saveButton.Click += (s, e) =>
-            {
-                _onSaveCallback?.Invoke();
-            };
-            
-            bottomPanel.Controls.Add(saveButton);
-            
-            // Layout
-            this.Controls.Add(_propertyGrid);
-            this.Controls.Add(bottomPanel);
+
+            this.Controls.Add(_tilesPanel);
             this.Controls.Add(titlePanel);
-            
-            // Enable dragging for title panel to undock
+
+            // Enable dragging
             titlePanel.MouseDown += TitlePanel_MouseDown;
             titlePanel.MouseMove += TitlePanel_MouseMove;
             titlePanel.MouseUp += TitlePanel_MouseUp;
@@ -554,14 +441,13 @@ namespace Project9.Editor
             _titleLabel.MouseMove += TitlePanel_MouseMove;
             _titleLabel.MouseUp += TitlePanel_MouseUp;
         }
-        
+
         private void TitlePanel_MouseDown(object? sender, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Left && _isDocked)
             {
                 _isDragging = true;
                 _dragStartPosition = this.Location;
-                // Get mouse position in screen coordinates
                 Control? control = sender as Control;
                 if (control != null)
                 {
@@ -573,41 +459,33 @@ namespace Project9.Editor
                 }
             }
         }
-        
+
         private void TitlePanel_MouseMove(object? sender, MouseEventArgs e)
         {
             if (_isDragging && _isDocked)
             {
-                // Get current mouse position in screen coordinates
                 Point currentMousePos = Control.MousePosition;
-                
-                // Calculate how far we've dragged
                 int deltaX = Math.Abs(currentMousePos.X - _dragStartMousePosition.X);
                 int deltaY = Math.Abs(currentMousePos.Y - _dragStartMousePosition.Y);
-                
-                // If dragged more than 5 pixels, undock
+
                 if (deltaX > 5 || deltaY > 5)
                 {
                     _isDragging = false;
-                    
-                    // Undock first
                     Undock();
-                    
-                    // Wait a moment for Windows to process the undocking
-                    Application.DoEvents();
-                    
-                    // Set new position based on current mouse position (screen coordinates)
-                    Point screenPos = Control.MousePosition;
-                    // Offset to center the window on the mouse
-                    this.Location = new Point(
-                        screenPos.X - this.Width / 2,
-                        screenPos.Y - 10
-                    );
-                    this.BringToFront();
+
+                    if (_parentForm != null)
+                    {
+                        Point screenPos = Control.MousePosition;
+                        Point clientPos = _parentForm.PointToClient(screenPos);
+                        this.Location = new Point(
+                            clientPos.X - this.Width / 2,
+                            clientPos.Y - 10
+                        );
+                    }
                 }
             }
         }
-        
+
         private void TitlePanel_MouseUp(object? sender, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Left)
@@ -616,178 +494,135 @@ namespace Project9.Editor
             }
         }
 
-        private void UpdatePropertyGrid()
+        private void LoadTileImages()
         {
-            if (_currentPlayer != null)
+            _tilesPanel.Controls.Clear();
+
+            if (_textureLoader == null) return;
+
+            int tileSize = 80;
+            int padding = 10;
+            int x = padding;
+            int y = padding;
+
+            foreach (TerrainType terrainType in Enum.GetValues<TerrainType>())
             {
-                // Update name text box (temporarily disable TextChanged to avoid triggering save)
-                _nameTextBox.TextChanged -= _nameTextBox_TextChanged;
-                _nameTextBox.Text = _currentPlayer.Name ?? "";
-                _nameTextBox.TextChanged += _nameTextBox_TextChanged;
-                
-                // Create a wrapper to expose properties with categories
-                _propertyGrid.SelectedObject = new PlayerPropertiesWrapper(_currentPlayer);
-                UpdateTitle();
-                // Data loaded
-            }
-            else
-            {
-                _nameTextBox.TextChanged -= _nameTextBox_TextChanged;
-                _nameTextBox.Text = "";
-                _nameTextBox.TextChanged += _nameTextBox_TextChanged;
-                _propertyGrid.SelectedObject = null;
-                _titleLabel.Text = "  Player Properties  •  No Selection";
-            }
-        }
-        
-        private void _nameTextBox_TextChanged(object? sender, EventArgs e)
-        {
-            if (_currentPlayer != null)
-            {
-                _currentPlayer.Name = _nameTextBox.Text;
-                _onSaveCallback?.Invoke(); // Auto-save on change
-                UpdateTitle();
-            }
-        }
-        
-        private void UpdateTitle()
-        {
-            if (_currentPlayer != null)
-            {
-                string nameDisplay = string.IsNullOrWhiteSpace(_currentPlayer.Name) ? "Unnamed" : _currentPlayer.Name;
-                _titleLabel.Text = $"  Player Properties  •  {nameDisplay}  •  X: {_currentPlayer.X:F1}, Y: {_currentPlayer.Y:F1}";
+                var texture = _textureLoader.GetTexture(terrainType);
+                if (texture == null) continue;
+
+                PictureBox tileBox = new PictureBox
+                {
+                    Location = new Point(x, y),
+                    Size = new Size(tileSize, tileSize),
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    Tag = terrainType,
+                    Cursor = Cursors.Hand,
+                    BackColor = Color.FromArgb(240, 240, 240)
+                };
+
+                // Scale the image to fit
+                var scaledImage = ScaleImage(texture, tileSize - 4, tileSize - 4);
+                tileBox.Image = scaledImage;
+
+                tileBox.Click += (s, e) =>
+                {
+                    if (s is PictureBox pb && pb.Tag is TerrainType type)
+                    {
+                        SelectTile(type, pb);
+                    }
+                };
+
+                tileBox.MouseEnter += (s, e) =>
+                {
+                    if (s is PictureBox pb)
+                    {
+                        pb.BackColor = Color.FromArgb(220, 220, 220);
+                    }
+                };
+
+                tileBox.MouseLeave += (s, e) =>
+                {
+                    if (s is PictureBox pb && pb.Tag is TerrainType type)
+                    {
+                        pb.BackColor = type == _selectedTerrainType 
+                            ? Color.FromArgb(173, 216, 230) 
+                            : Color.FromArgb(240, 240, 240);
+                    }
+                };
+
+                _tilesPanel.Controls.Add(tileBox);
+
+                x += tileSize + padding;
+                if (x + tileSize + padding > _tilesPanel.Width - SystemInformation.VerticalScrollBarWidth)
+                {
+                    x = padding;
+                    y += tileSize + padding;
+                }
             }
         }
 
-        public void SetSaveCallback(Action callback)
+        private Bitmap ScaleImage(Bitmap original, int maxWidth, int maxHeight)
         {
-            _onSaveCallback = callback;
+            float ratio = Math.Min((float)maxWidth / original.Width, (float)maxHeight / original.Height);
+            int newWidth = (int)(original.Width * ratio);
+            int newHeight = (int)(original.Height * ratio);
+
+            Bitmap scaled = new Bitmap(newWidth, newHeight);
+            using (Graphics g = Graphics.FromImage(scaled))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(original, 0, 0, newWidth, newHeight);
+            }
+            return scaled;
         }
 
-        
-        /// <summary>
-        /// Wrapper class to organize player properties in categories for PropertyGrid
-        /// </summary>
-        private class PlayerPropertiesWrapper
+        private void SelectTile(TerrainType terrainType, PictureBox tileBox)
         {
-            private PlayerData _playerData;
-            
-            public PlayerPropertiesWrapper(PlayerData playerData)
+            // Update previous selection
+            if (_selectedTileBox != null)
             {
-                _playerData = playerData;
+                _selectedTileBox.BackColor = Color.FromArgb(240, 240, 240);
             }
-            
-            [System.ComponentModel.Category("Position")]
-            [System.ComponentModel.Description("X position in pixels")]
-            public float X
+
+            // Update new selection
+            _selectedTerrainType = terrainType;
+            _selectedTileBox = tileBox;
+            tileBox.BackColor = Color.FromArgb(173, 216, 230); // Light blue
+
+            // Update map render control
+            if (_mapRenderControl != null)
             {
-                get => _playerData.X;
-                set => _playerData.X = value;
+                _mapRenderControl.SelectedTerrainType = terrainType;
             }
-            
-            [System.ComponentModel.Category("Position")]
-            [System.ComponentModel.Description("Y position in pixels")]
-            public float Y
+        }
+
+        private void UpdateSelectedTile()
+        {
+            foreach (Control control in _tilesPanel.Controls)
             {
-                get => _playerData.Y;
-                set => _playerData.Y = value;
+                if (control is PictureBox pb && pb.Tag is TerrainType type)
+                {
+                    pb.BackColor = type == _selectedTerrainType
+                        ? Color.FromArgb(173, 216, 230)
+                        : Color.FromArgb(240, 240, 240);
+                    
+                    if (type == _selectedTerrainType)
+                    {
+                        _selectedTileBox = pb;
+                    }
+                }
             }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Walking speed in pixels per second")]
-            public float WalkSpeed
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (e.CloseReason == CloseReason.UserClosing || e.CloseReason == CloseReason.None)
             {
-                get => _playerData.WalkSpeed;
-                set => _playerData.WalkSpeed = value;
+                e.Cancel = true;
+                this.Hide();
             }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Running speed in pixels per second")]
-            public float RunSpeed
-            {
-                get => _playerData.RunSpeed;
-                set => _playerData.RunSpeed = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Sneak speed multiplier (applied to walk speed)")]
-            public float SneakSpeedMultiplier
-            {
-                get => _playerData.SneakSpeedMultiplier;
-                set => _playerData.SneakSpeedMultiplier = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Distance threshold for reaching target (pixels)")]
-            public float StopThreshold
-            {
-                get => _playerData.StopThreshold;
-                set => _playerData.StopThreshold = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Distance at which player starts slowing down (pixels)")]
-            public float SlowdownRadius
-            {
-                get => _playerData.SlowdownRadius;
-                set => _playerData.SlowdownRadius = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Distance threshold for final target when sneaking (pixels)")]
-            public float SneakStopThreshold
-            {
-                get => _playerData.SneakStopThreshold;
-                set => _playerData.SneakStopThreshold = value;
-            }
-            
-            [System.ComponentModel.Category("Movement")]
-            [System.ComponentModel.Description("Distance threshold for final target when running (pixels)")]
-            public float RunStopThreshold
-            {
-                get => _playerData.RunStopThreshold;
-                set => _playerData.RunStopThreshold = value;
-            }
-            
-            [System.ComponentModel.Category("Combat")]
-            [System.ComponentModel.Description("Damage dealt by player per attack")]
-            public float AttackDamage
-            {
-                get => _playerData.AttackDamage;
-                set => _playerData.AttackDamage = value;
-            }
-            
-            [System.ComponentModel.Category("Health")]
-            [System.ComponentModel.Description("Maximum health")]
-            public float MaxHealth
-            {
-                get => _playerData.MaxHealth;
-                set => _playerData.MaxHealth = value;
-            }
-            
-            [System.ComponentModel.Category("Respawn")]
-            [System.ComponentModel.Description("Respawn countdown duration in seconds")]
-            public float RespawnCountdown
-            {
-                get => _playerData.RespawnCountdown;
-                set => _playerData.RespawnCountdown = value;
-            }
-            
-            [System.ComponentModel.Category("Visual")]
-            [System.ComponentModel.Description("Death pulse speed (pulses per second)")]
-            public float DeathPulseSpeed
-            {
-                get => _playerData.DeathPulseSpeed;
-                set => _playerData.DeathPulseSpeed = value;
-            }
-            
-            [System.ComponentModel.Category("Visual")]
-            [System.ComponentModel.Description("Current rotation in radians")]
-            public float Rotation
-            {
-                get => _playerData.Rotation;
-                set => _playerData.Rotation = value;
-            }
+            base.OnFormClosing(e);
         }
     }
 }
