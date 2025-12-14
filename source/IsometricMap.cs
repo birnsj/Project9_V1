@@ -38,31 +38,95 @@ namespace Project9
             foreach (TerrainType terrainType in Enum.GetValues<TerrainType>())
             {
                 string texturePath;
+                string pngPath;
                 // Test tiles are in the test folder, others are in template folder
                 if (terrainType == TerrainType.Test || terrainType == TerrainType.Test2)
                 {
                     texturePath = $"sprites/tiles/test/{terrainType}";
+                    pngPath = $"Content/sprites/tiles/test/{terrainType}.png";
                 }
                 else
                 {
                     texturePath = $"sprites/tiles/template/{terrainType}";
+                    pngPath = $"Content/sprites/tiles/template/{terrainType}.png";
                 }
                 
                 Console.WriteLine($"[IsometricMap] Loading texture: {texturePath}");
+                Texture2D? loadedTexture = null;
+                
+                // First, try loading from ContentManager (XNB file)
                 try
                 {
-                    _terrainTextures[terrainType] = content.Load<Texture2D>(texturePath);
-                    Console.WriteLine($"[IsometricMap] Successfully loaded {terrainType} - Size: {_terrainTextures[terrainType].Width}x{_terrainTextures[terrainType].Height}");
+                    loadedTexture = content.Load<Texture2D>(texturePath);
+                    Console.WriteLine($"[IsometricMap] Successfully loaded {terrainType} from XNB - Size: {loadedTexture.Width}x{loadedTexture.Height}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[IsometricMap] Failed to load {terrainType} from {texturePath}: {ex.Message}");
-                    // Create a placeholder texture if loading fails
+                    Console.WriteLine($"[IsometricMap] Failed to load {terrainType} from XNB ({texturePath}): {ex.Message}");
+                    
+                    // If XNB doesn't exist, try loading PNG directly (automatic conversion on load)
+                    string? resolvedPngPath = ResolveTexturePath(pngPath);
+                    if (resolvedPngPath != null && File.Exists(resolvedPngPath))
+                    {
+                        try
+                        {
+                            using (FileStream fileStream = new FileStream(resolvedPngPath, FileMode.Open, FileAccess.Read))
+                            {
+                                loadedTexture = Texture2D.FromStream(_graphicsDevice, fileStream);
+                                Console.WriteLine($"[IsometricMap] Successfully loaded {terrainType} from PNG (auto-converted) - Size: {loadedTexture.Width}x{loadedTexture.Height}");
+                            }
+                        }
+                        catch (Exception pngEx)
+                        {
+                            Console.WriteLine($"[IsometricMap] Failed to load {terrainType} from PNG ({resolvedPngPath}): {pngEx.Message}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[IsometricMap] PNG file not found: {pngPath}");
+                    }
+                }
+                
+                // If we successfully loaded a texture, use it; otherwise create placeholder
+                if (loadedTexture != null)
+                {
+                    _terrainTextures[terrainType] = loadedTexture;
+                }
+                else
+                {
+                    Console.WriteLine($"[IsometricMap] Creating placeholder texture for {terrainType}");
                     Texture2D placeholder = new Texture2D(_graphicsDevice, 1, 1);
                     placeholder.SetData(new[] { Color.Magenta });
                     _terrainTextures[terrainType] = placeholder;
                 }
             }
+        }
+        
+        private static string? ResolveTexturePath(string relativePath)
+        {
+            // Try current directory first
+            string currentDir = Directory.GetCurrentDirectory();
+            string fullPath = Path.GetFullPath(Path.Combine(currentDir, relativePath));
+            if (File.Exists(fullPath))
+                return fullPath;
+
+            // Try executable directory
+            string exeDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? AppContext.BaseDirectory;
+            fullPath = Path.GetFullPath(Path.Combine(exeDir, relativePath));
+            if (File.Exists(fullPath))
+                return fullPath;
+
+            // Try going up to project root (for development)
+            var dir = new DirectoryInfo(exeDir);
+            while (dir != null && dir.Parent != null)
+            {
+                string testPath = Path.GetFullPath(Path.Combine(dir.FullName, relativePath));
+                if (File.Exists(testPath))
+                    return testPath;
+                dir = dir.Parent;
+            }
+
+            return null;
         }
 
         private void LoadMap()
