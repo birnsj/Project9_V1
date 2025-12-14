@@ -493,6 +493,44 @@ namespace Project9.Editor
                 {
                     UpdateTitle();
                 }
+                
+                // If diamond dimensions changed, refresh the view immediately
+                if (e.ChangedItem?.Label == "DiamondWidth" || e.ChangedItem?.Label == "DiamondHeight")
+                {
+                    _mapRenderControl?.Invalidate();
+                }
+                // Refresh preview when properties change
+                foreach (Control control in this.Controls)
+                {
+                    if (control is Panel panel && panel.BackColor == Color.FromArgb(30, 30, 30))
+                    {
+                        panel.Invalidate();
+                        break;
+                    }
+                }
+            };
+            
+            // Handle Enter key to commit changes immediately
+            _propertyGrid.PreviewKeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    var selectedItem = _propertyGrid.SelectedGridItem;
+                    if (selectedItem != null && (selectedItem.Label == "DiamondWidth" || selectedItem.Label == "DiamondHeight"))
+                    {
+                        // Allow Enter to be processed normally (it will commit the edit)
+                        // Then invalidate the view after a short delay to ensure the value is committed
+                        System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+                        timer.Interval = 10; // Small delay to let PropertyGrid commit
+                        timer.Tick += (sender, args) =>
+                        {
+                            timer.Stop();
+                            timer.Dispose();
+                            _mapRenderControl?.Invalidate();
+                        };
+                        timer.Start();
+                    }
+                }
             };
             
             // Enable drag-to-adjust for numeric properties
@@ -542,7 +580,30 @@ namespace Project9.Editor
             bottomPanel.Controls.Add(saveButton);
             
             // Layout
+            // Bounding box preview panel
+            Panel previewPanel = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 150,
+                BackColor = Color.FromArgb(30, 30, 30),
+                Padding = new Padding(5)
+            };
+            previewPanel.Paint += (s, e) => DrawBoundingBoxPreview(e.Graphics, previewPanel.ClientRectangle);
+            
+            Label previewLabel = new Label
+            {
+                Text = "Bounding Box Preview",
+                Dock = DockStyle.Top,
+                Height = 20,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 8, FontStyle.Bold),
+                BackColor = Color.Transparent
+            };
+            previewPanel.Controls.Add(previewLabel);
+            
             this.Controls.Add(_propertyGrid);
+            this.Controls.Add(previewPanel);
             this.Controls.Add(bottomPanel);
             this.Controls.Add(titlePanel);
             
@@ -637,6 +698,15 @@ namespace Project9.Editor
                 _nameTextBox.TextChanged += _nameTextBox_TextChanged;
                 _propertyGrid.SelectedObject = null;
                 _titleLabel.Text = "  Player Properties  •  No Selection";
+            }
+            // Refresh preview when entity changes
+            foreach (Control control in this.Controls)
+            {
+                if (control is Panel panel && panel.BackColor == Color.FromArgb(30, 30, 30))
+                {
+                    panel.Invalidate();
+                    break;
+                }
             }
         }
         
@@ -787,6 +857,135 @@ namespace Project9.Editor
             {
                 get => _playerData.Rotation;
                 set => _playerData.Rotation = value;
+            }
+            
+            [System.ComponentModel.Category("Visual")]
+            [System.ComponentModel.Description("Width of the diamond texture in pixels. Height is automatically adjusted to maintain 2:1 aspect ratio.")]
+            public int DiamondWidth
+            {
+                get => _playerData.DiamondWidth;
+                set
+                {
+                    _playerData.DiamondWidth = value;
+                    // Maintain isometric 2:1 aspect ratio (width:height)
+                    _playerData.DiamondHeight = value / 2;
+                }
+            }
+
+            [System.ComponentModel.Category("Visual")]
+            [System.ComponentModel.Description("Height of the diamond texture in pixels. Width is automatically adjusted to maintain 2:1 aspect ratio.")]
+            public int DiamondHeight
+            {
+                get => _playerData.DiamondHeight;
+                set
+                {
+                    _playerData.DiamondHeight = value;
+                    // Maintain isometric 2:1 aspect ratio (width:height)
+                    _playerData.DiamondWidth = value * 2;
+                }
+            }
+            
+            [System.ComponentModel.Category("Visual")]
+            [System.ComponentModel.Description("Z height for 3D isometric rendering (vertical offset)")]
+            public float ZHeight
+            {
+                get => _playerData.ZHeight;
+                set => _playerData.ZHeight = Math.Max(0.0f, value);
+            }
+        }
+        
+        private void DrawBoundingBoxPreview(Graphics g, Rectangle bounds)
+        {
+            if (_currentPlayer == null) return;
+            
+            // Clear background
+            g.Clear(Color.FromArgb(30, 30, 30));
+            
+            // Calculate preview area (leave space for label)
+            Rectangle previewArea = new Rectangle(
+                bounds.X + 5,
+                bounds.Y + 25,
+                bounds.Width - 10,
+                bounds.Height - 30
+            );
+            
+            // Center of preview
+            float centerX = previewArea.X + previewArea.Width / 2.0f;
+            float centerY = previewArea.Y + previewArea.Height / 2.0f;
+            
+            // Get entity dimensions
+            float width = _currentPlayer.DiamondWidth;
+            float height = _currentPlayer.DiamondHeight;
+            float zHeight = _currentPlayer.ZHeight;
+            
+            // Scale factor to fit the bounding box in the preview
+            float maxDimension = Math.Max(width, height);
+            float maxScreenHeight = maxDimension + (zHeight > 0 ? zHeight * 0.5f : 0); // Height + Z offset
+            float scaleX = previewArea.Width / (maxDimension * 1.5f);
+            float scaleY = previewArea.Height / (maxScreenHeight * 1.5f);
+            float scale = Math.Min(scaleX, scaleY);
+            scale = Math.Max(0.1f, Math.Min(scale, 2.0f)); // Clamp scale
+            
+            float halfWidth = width / 2.0f;
+            float halfHeight = height / 2.0f;
+            
+            // ZHeight represents the TOP of the object
+            // Base is always at z = 0, top is at z = zHeight
+            const float heightScale = 0.5f;
+            float zOffsetY = zHeight * heightScale;
+            
+            if (zHeight > 0)
+            {
+                // Draw 3D bounding box using isometric diamond shape
+                // Bottom face corners (z = 0) - base of the object
+                PointF bottomTop = new PointF(centerX, centerY - halfHeight * scale);
+                PointF bottomRight = new PointF(centerX + halfWidth * scale, centerY);
+                PointF bottomBottom = new PointF(centerX, centerY + halfHeight * scale);
+                PointF bottomLeft = new PointF(centerX - halfWidth * scale, centerY);
+                
+                // Top face corners (z = zHeight) - top of the object
+                // In isometric, Z height affects the Y coordinate (moves up in screen space)
+                PointF topTop = new PointF(centerX, centerY - halfHeight * scale - zOffsetY * scale);
+                PointF topRight = new PointF(centerX + halfWidth * scale, centerY - zOffsetY * scale);
+                PointF topBottom = new PointF(centerX, centerY + halfHeight * scale - zOffsetY * scale);
+                PointF topLeft = new PointF(centerX - halfWidth * scale, centerY - zOffsetY * scale);
+                
+                using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
+                {
+                    // Bottom face (isometric diamond at z=0)
+                    g.DrawLine(boxPen, bottomTop, bottomRight);
+                    g.DrawLine(boxPen, bottomRight, bottomBottom);
+                    g.DrawLine(boxPen, bottomBottom, bottomLeft);
+                    g.DrawLine(boxPen, bottomLeft, bottomTop);
+                    
+                    // Top face (isometric diamond at z=zHeight)
+                    g.DrawLine(boxPen, topTop, topRight);
+                    g.DrawLine(boxPen, topRight, topBottom);
+                    g.DrawLine(boxPen, topBottom, topLeft);
+                    g.DrawLine(boxPen, topLeft, topTop);
+                    
+                    // Vertical edges connecting bottom to top
+                    g.DrawLine(boxPen, bottomTop, topTop);
+                    g.DrawLine(boxPen, bottomRight, topRight);
+                    g.DrawLine(boxPen, bottomBottom, topBottom);
+                    g.DrawLine(boxPen, bottomLeft, topLeft);
+                }
+            }
+            else
+            {
+                // Draw 2D diamond outline (isometric shape)
+                PointF[] diamondPoints = new PointF[]
+                {
+                    new PointF(centerX, centerY - halfHeight * scale),           // Top
+                    new PointF(centerX + halfWidth * scale, centerY),              // Right
+                    new PointF(centerX, centerY + halfHeight * scale),            // Bottom
+                    new PointF(centerX - halfWidth * scale, centerY)               // Left
+                };
+                
+                using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
+                {
+                    g.DrawPolygon(boxPen, diamondPoints);
+                }
             }
         }
     }

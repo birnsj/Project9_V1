@@ -38,7 +38,19 @@ namespace Project9.Editor
         private TileBrowserWindow? _tileBrowserWindow;
         private ToolStripMenuItem? _showEnemyConesMenuItem;
         private ToolStripMenuItem? _showCameraConesMenuItem;
+        private ToolStripMenuItem? _showGrid32x16MenuItem;
         private ToolStripMenuItem? _showGrid64x32MenuItem;
+        private ToolStripMenuItem? _showGrid128x64MenuItem;
+        private ToolStripMenuItem? _showGrid512x256MenuItem;
+        private ToolStripMenuItem? _showGrid1024x512MenuItem;
+        private ToolStripMenuItem? _showBoundingBoxesMenuItem;
+        private ToolStripComboBox? _gridSnapComboBox;
+        private ToolStripMenuItem? _showEnemyPropertiesMenuItem;
+        private ToolStripMenuItem? _showPlayerPropertiesMenuItem;
+        private ToolStripMenuItem? _showCameraPropertiesMenuItem;
+        private ToolStripMenuItem? _showWeaponPropertiesMenuItem;
+        private ToolStripMenuItem? _showCollisionWindowMenuItem;
+        private ToolStripMenuItem? _showTileBrowserMenuItem;
 
         public EditorForm()
         {
@@ -49,6 +61,83 @@ namespace Project9.Editor
 
         private void EditorForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
+            // Save editor layout automatically on close
+            try
+            {
+                EditorLayout layout = EditorLayout.Load();
+                
+                // Save main window layout
+                layout.MainWindow = EditorLayout.WindowLayout.FromForm(this, false);
+                
+                // Save property windows layouts
+                if (_enemyPropertiesWindow != null && !_enemyPropertiesWindow.IsDisposed)
+                {
+                    layout.EnemyPropertiesWindow = EditorLayout.WindowLayout.FromForm(
+                        _enemyPropertiesWindow,
+                        _enemyPropertiesWindow.IsDocked
+                    );
+                }
+                
+                if (_playerPropertiesWindow != null && !_playerPropertiesWindow.IsDisposed)
+                {
+                    layout.PlayerPropertiesWindow = EditorLayout.WindowLayout.FromForm(
+                        _playerPropertiesWindow,
+                        _playerPropertiesWindow.IsDocked
+                    );
+                }
+                
+                if (_cameraPropertiesWindow != null && !_cameraPropertiesWindow.IsDisposed)
+                {
+                    layout.CameraPropertiesWindow = EditorLayout.WindowLayout.FromForm(
+                        _cameraPropertiesWindow,
+                        _cameraPropertiesWindow.IsDocked
+                    );
+                }
+                
+                if (_weaponPropertiesWindow != null && !_weaponPropertiesWindow.IsDisposed)
+                {
+                    layout.WeaponPropertiesWindow = EditorLayout.WindowLayout.FromForm(
+                        _weaponPropertiesWindow,
+                        _weaponPropertiesWindow.IsDocked
+                    );
+                }
+                
+                if (_collisionWindow != null && !_collisionWindow.IsDisposed)
+                {
+                    layout.CollisionWindow = EditorLayout.WindowLayout.FromForm(_collisionWindow, false);
+                }
+                
+                if (_tileBrowserWindow != null && !_tileBrowserWindow.IsDisposed)
+                {
+                    layout.TileBrowserWindow = EditorLayout.WindowLayout.FromForm(
+                        _tileBrowserWindow,
+                        _tileBrowserWindow.IsDocked
+                    );
+                }
+                
+                // Save view settings (including camera position and zoom)
+                layout.View = new EditorLayout.ViewSettings
+                {
+                    ShowGrid32x16 = _mapRenderControl.ShowGrid32x16,
+                    ShowGrid64x32 = _mapRenderControl.ShowGrid64x32,
+                    ShowGrid128x64 = _mapRenderControl.ShowGrid128x64,
+                    ShowGrid512x256 = _mapRenderControl.ShowGrid512x256,
+                    ShowGrid1024x512 = _mapRenderControl.ShowGrid1024x512,
+                    TileOpacity = _mapRenderControl.TileOpacity,
+                    ShowEnemyCones = _mapRenderControl.ShowEnemyCones,
+                    ShowCameraCones = _mapRenderControl.ShowCameraCones,
+                    CameraPositionX = _mapRenderControl.Camera.Position.X,
+                    CameraPositionY = _mapRenderControl.Camera.Position.Y,
+                    CameraZoom = _mapRenderControl.Camera.Zoom
+                };
+                
+                layout.Save();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error auto-saving editor layout: {ex.Message}");
+            }
+            
             // Shut down auto-started ComfyUI if enabled
             if (_comfyUISettings?.AutoStartComfyUI == true && _autoStartedServerManager != null)
             {
@@ -138,11 +227,43 @@ namespace Project9.Editor
             _showCameraConesMenuItem.Click += ShowCameraConesMenuItem_Click;
             viewMenu.DropDownItems.Add(_showCameraConesMenuItem);
             
+            _showGrid32x16MenuItem = new ToolStripMenuItem("Show 32x16 Grid");
+            _showGrid32x16MenuItem.CheckOnClick = true;
+            _showGrid32x16MenuItem.Checked = false; // Default to off
+            _showGrid32x16MenuItem.Click += ShowGrid32x16MenuItem_Click;
+            viewMenu.DropDownItems.Add(_showGrid32x16MenuItem);
+            
             _showGrid64x32MenuItem = new ToolStripMenuItem("Show 64x32 Grid");
             _showGrid64x32MenuItem.CheckOnClick = true;
             _showGrid64x32MenuItem.Checked = false; // Default to off
             _showGrid64x32MenuItem.Click += ShowGrid64x32MenuItem_Click;
             viewMenu.DropDownItems.Add(_showGrid64x32MenuItem);
+            
+            _showGrid128x64MenuItem = new ToolStripMenuItem("Show 128x64 Grid");
+            _showGrid128x64MenuItem.CheckOnClick = true;
+            _showGrid128x64MenuItem.Checked = false; // Default to off
+            _showGrid128x64MenuItem.Click += ShowGrid128x64MenuItem_Click;
+            viewMenu.DropDownItems.Add(_showGrid128x64MenuItem);
+            
+            _showGrid512x256MenuItem = new ToolStripMenuItem("Show 512x256 Grid");
+            _showGrid512x256MenuItem.CheckOnClick = true;
+            _showGrid512x256MenuItem.Checked = false; // Default to off
+            _showGrid512x256MenuItem.Click += ShowGrid512x256MenuItem_Click;
+            viewMenu.DropDownItems.Add(_showGrid512x256MenuItem);
+            
+            _showGrid1024x512MenuItem = new ToolStripMenuItem("Show 1024x512 Grid");
+            _showGrid1024x512MenuItem.CheckOnClick = true;
+            _showGrid1024x512MenuItem.Checked = false; // Default to off
+            _showGrid1024x512MenuItem.Click += ShowGrid1024x512MenuItem_Click;
+            viewMenu.DropDownItems.Add(_showGrid1024x512MenuItem);
+            
+            viewMenu.DropDownItems.Add(new ToolStripSeparator());
+            
+            _showBoundingBoxesMenuItem = new ToolStripMenuItem("Show Bounding Boxes");
+            _showBoundingBoxesMenuItem.CheckOnClick = true;
+            _showBoundingBoxesMenuItem.Checked = true; // Default to on
+            _showBoundingBoxesMenuItem.Click += ShowBoundingBoxesMenuItem_Click;
+            viewMenu.DropDownItems.Add(_showBoundingBoxesMenuItem);
             
             ToolStripMenuItem tileOpacityMenuItem = new ToolStripMenuItem("Tile Opacity...");
             tileOpacityMenuItem.Click += TileOpacityMenuItem_Click;
@@ -150,10 +271,68 @@ namespace Project9.Editor
             
             _menuStrip.Items.Add(viewMenu);
             
+            // Windows Menu
+            ToolStripMenuItem windowsMenu = new ToolStripMenuItem("Windows");
+            
+            _showEnemyPropertiesMenuItem = new ToolStripMenuItem("Enemy Properties");
+            _showEnemyPropertiesMenuItem.CheckOnClick = true;
+            _showEnemyPropertiesMenuItem.Checked = false;
+            _showEnemyPropertiesMenuItem.Click += ShowEnemyPropertiesMenuItem_Click;
+            windowsMenu.DropDownItems.Add(_showEnemyPropertiesMenuItem);
+            
+            _showPlayerPropertiesMenuItem = new ToolStripMenuItem("Player Properties");
+            _showPlayerPropertiesMenuItem.CheckOnClick = true;
+            _showPlayerPropertiesMenuItem.Checked = false;
+            _showPlayerPropertiesMenuItem.Click += ShowPlayerPropertiesMenuItem_Click;
+            windowsMenu.DropDownItems.Add(_showPlayerPropertiesMenuItem);
+            
+            _showCameraPropertiesMenuItem = new ToolStripMenuItem("Camera Properties");
+            _showCameraPropertiesMenuItem.CheckOnClick = true;
+            _showCameraPropertiesMenuItem.Checked = false;
+            _showCameraPropertiesMenuItem.Click += ShowCameraPropertiesMenuItem_Click;
+            windowsMenu.DropDownItems.Add(_showCameraPropertiesMenuItem);
+            
+            _showWeaponPropertiesMenuItem = new ToolStripMenuItem("Weapon Properties");
+            _showWeaponPropertiesMenuItem.CheckOnClick = true;
+            _showWeaponPropertiesMenuItem.Checked = false;
+            _showWeaponPropertiesMenuItem.Click += ShowWeaponPropertiesMenuItem_Click;
+            windowsMenu.DropDownItems.Add(_showWeaponPropertiesMenuItem);
+            
+            windowsMenu.DropDownItems.Add(new ToolStripSeparator());
+            
+            _showCollisionWindowMenuItem = new ToolStripMenuItem("Collision Window");
+            _showCollisionWindowMenuItem.CheckOnClick = true;
+            _showCollisionWindowMenuItem.Checked = false;
+            _showCollisionWindowMenuItem.Click += ShowCollisionWindowMenuItem_Click;
+            windowsMenu.DropDownItems.Add(_showCollisionWindowMenuItem);
+            
+            _showTileBrowserMenuItem = new ToolStripMenuItem("Tile Browser");
+            _showTileBrowserMenuItem.CheckOnClick = true;
+            _showTileBrowserMenuItem.Checked = false;
+            _showTileBrowserMenuItem.Click += ShowTileBrowserMenuItem_Click;
+            windowsMenu.DropDownItems.Add(_showTileBrowserMenuItem);
+            
+            _menuStrip.Items.Add(windowsMenu);
+            
             // About Menu
             ToolStripMenuItem aboutMenu = new ToolStripMenuItem("About");
             aboutMenu.Click += AboutMenu_Click;
             _menuStrip.Items.Add(aboutMenu);
+            
+            // Grid Snap Size dropdown
+            _menuStrip.Items.Add(new ToolStripSeparator());
+            ToolStripLabel gridSnapLabel = new ToolStripLabel("Grid Snap:");
+            _menuStrip.Items.Add(gridSnapLabel);
+            
+            _gridSnapComboBox = new ToolStripComboBox
+            {
+                Width = 120,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _gridSnapComboBox.Items.AddRange(new object[] { "32x16", "64x32", "128x64", "512x256", "1024x512" });
+            _gridSnapComboBox.SelectedIndex = 1; // Default to 64x32
+            _gridSnapComboBox.SelectedIndexChanged += GridSnapComboBox_SelectedIndexChanged;
+            _menuStrip.Items.Add(_gridSnapComboBox);
             
             this.MainMenuStrip = _menuStrip;
 
@@ -346,19 +525,53 @@ namespace Project9.Editor
             // Initialize map render control
             _mapRenderControl.Initialize(_mapData, _textureLoader);
             
+            // Initialize grid snap size (default to 64x32)
+            if (_gridSnapComboBox != null)
+            {
+                _gridSnapComboBox.SelectedIndex = 1; // 64x32
+                _mapRenderControl.GridSnapWidth = 64.0f;
+            }
+            
             // Load view settings from saved layout
             EditorLayout savedLayout = EditorLayout.Load();
             if (savedLayout.View != null)
             {
+                _mapRenderControl.ShowGrid32x16 = savedLayout.View.ShowGrid32x16;
                 _mapRenderControl.ShowGrid64x32 = savedLayout.View.ShowGrid64x32;
+                _mapRenderControl.ShowGrid128x64 = savedLayout.View.ShowGrid128x64;
+                _mapRenderControl.ShowGrid512x256 = savedLayout.View.ShowGrid512x256;
+                _mapRenderControl.ShowGrid1024x512 = savedLayout.View.ShowGrid1024x512;
                 _mapRenderControl.TileOpacity = savedLayout.View.TileOpacity;
                 _mapRenderControl.ShowEnemyCones = savedLayout.View.ShowEnemyCones;
                 _mapRenderControl.ShowCameraCones = savedLayout.View.ShowCameraCones;
                 
+                // Restore camera position and zoom
+                _mapRenderControl.Camera.Position = new System.Drawing.PointF(
+                    savedLayout.View.CameraPositionX,
+                    savedLayout.View.CameraPositionY
+                );
+                _mapRenderControl.Camera.Zoom = savedLayout.View.CameraZoom;
+                
                 // Update menu item checked states
+                if (_showGrid32x16MenuItem != null)
+                {
+                    _showGrid32x16MenuItem.Checked = savedLayout.View.ShowGrid32x16;
+                }
                 if (_showGrid64x32MenuItem != null)
                 {
                     _showGrid64x32MenuItem.Checked = savedLayout.View.ShowGrid64x32;
+                }
+                if (_showGrid128x64MenuItem != null)
+                {
+                    _showGrid128x64MenuItem.Checked = savedLayout.View.ShowGrid128x64;
+                }
+                if (_showGrid512x256MenuItem != null)
+                {
+                    _showGrid512x256MenuItem.Checked = savedLayout.View.ShowGrid512x256;
+                }
+                if (_showGrid1024x512MenuItem != null)
+                {
+                    _showGrid1024x512MenuItem.Checked = savedLayout.View.ShowGrid1024x512;
                 }
                 if (_showEnemyConesMenuItem != null)
                 {
@@ -387,6 +600,12 @@ namespace Project9.Editor
             _mapRenderControl.CameraRightClicked += MapRenderControl_CameraRightClicked;
             // Subscribe to weapon right-click event
             _mapRenderControl.WeaponRightClicked += MapRenderControl_WeaponRightClicked;
+            
+            // Subscribe to left-click events for populating blank properties windows
+            _mapRenderControl.EnemyLeftClicked += MapRenderControl_EnemyLeftClicked;
+            _mapRenderControl.PlayerLeftClicked += MapRenderControl_PlayerLeftClicked;
+            _mapRenderControl.CameraLeftClicked += MapRenderControl_CameraLeftClicked;
+            _mapRenderControl.WeaponLeftClicked += MapRenderControl_WeaponLeftClicked;
             
             // Force a redraw after initialization
             _mapRenderControl.Invalidate();
@@ -527,6 +746,7 @@ namespace Project9.Editor
                 _tileBrowserWindow.SetMapRenderControl(_mapRenderControl);
                 _tileBrowserWindow.SetTextureLoader(_textureLoader);
                 _tileBrowserWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _tileBrowserWindow.VisibleChanged += (s, e) => UpdateTileBrowserMenuItemChecked();
             }
 
             if (_tileBrowserWindow.Visible)
@@ -538,6 +758,7 @@ namespace Project9.Editor
                 CenterWindowOnEditor(_tileBrowserWindow);
                 _tileBrowserWindow.Show();
             }
+            UpdateTileBrowserMenuItemChecked();
         }
 
         private async void LoadMenuItem_Click(object? sender, EventArgs e)
@@ -600,6 +821,205 @@ namespace Project9.Editor
             }
         }
 
+        private void ShowEnemyPropertiesMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_enemyPropertiesWindow == null || _enemyPropertiesWindow.IsDisposed)
+            {
+                _enemyPropertiesWindow = new EnemyPropertiesWindow();
+                _enemyPropertiesWindow.SetSaveCallback(() => SaveEnemyProperties());
+                _enemyPropertiesWindow.Owner = this;
+                _enemyPropertiesWindow.SetParentForm(this);
+                _enemyPropertiesWindow.SetMapRenderControl(_mapRenderControl);
+                _enemyPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _enemyPropertiesWindow.VisibleChanged += (s, e) => UpdateEnemyPropertiesMenuItemChecked();
+            }
+
+            if (_enemyPropertiesWindow.Visible)
+            {
+                _enemyPropertiesWindow.Hide();
+            }
+            else
+            {
+                CenterWindowOnEditor(_enemyPropertiesWindow);
+                _enemyPropertiesWindow.Show();
+            }
+            UpdateEnemyPropertiesMenuItemChecked();
+        }
+
+        private void ShowPlayerPropertiesMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_playerPropertiesWindow == null || _playerPropertiesWindow.IsDisposed)
+            {
+                _playerPropertiesWindow = new PlayerPropertiesWindow();
+                _playerPropertiesWindow.SetSaveCallback(() => SavePlayerProperties());
+                _playerPropertiesWindow.Owner = this;
+                _playerPropertiesWindow.SetParentForm(this);
+                _playerPropertiesWindow.SetMapRenderControl(_mapRenderControl);
+                _playerPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _playerPropertiesWindow.VisibleChanged += (s, e) => UpdatePlayerPropertiesMenuItemChecked();
+            }
+
+            if (_playerPropertiesWindow.Visible)
+            {
+                _playerPropertiesWindow.Hide();
+            }
+            else
+            {
+                CenterWindowOnEditor(_playerPropertiesWindow);
+                _playerPropertiesWindow.Show();
+            }
+            UpdatePlayerPropertiesMenuItemChecked();
+        }
+
+        private void ShowCameraPropertiesMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_cameraPropertiesWindow == null || _cameraPropertiesWindow.IsDisposed)
+            {
+                _cameraPropertiesWindow = new CameraPropertiesWindow();
+                _cameraPropertiesWindow.SetSaveCallback(() => SaveCameraProperties());
+                _cameraPropertiesWindow.Owner = this;
+                _cameraPropertiesWindow.SetParentForm(this);
+                _cameraPropertiesWindow.SetMapRenderControl(_mapRenderControl);
+                _cameraPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _cameraPropertiesWindow.VisibleChanged += (s, e) => UpdateCameraPropertiesMenuItemChecked();
+            }
+
+            if (_cameraPropertiesWindow.Visible)
+            {
+                _cameraPropertiesWindow.Hide();
+            }
+            else
+            {
+                CenterWindowOnEditor(_cameraPropertiesWindow);
+                _cameraPropertiesWindow.Show();
+            }
+            UpdateCameraPropertiesMenuItemChecked();
+        }
+
+        private void ShowWeaponPropertiesMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_weaponPropertiesWindow == null || _weaponPropertiesWindow.IsDisposed)
+            {
+                _weaponPropertiesWindow = new WeaponPropertiesWindow();
+                _weaponPropertiesWindow.SetSaveCallback(() => SaveWeaponProperties());
+                _weaponPropertiesWindow.Owner = this;
+                _weaponPropertiesWindow.SetParentForm(this);
+                _weaponPropertiesWindow.SetMapRenderControl(_mapRenderControl);
+                _weaponPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _weaponPropertiesWindow.VisibleChanged += (s, e) => UpdateWeaponPropertiesMenuItemChecked();
+            }
+
+            if (_weaponPropertiesWindow.Visible)
+            {
+                _weaponPropertiesWindow.Hide();
+            }
+            else
+            {
+                CenterWindowOnEditor(_weaponPropertiesWindow);
+                _weaponPropertiesWindow.Show();
+            }
+            UpdateWeaponPropertiesMenuItemChecked();
+        }
+
+        private void ShowCollisionWindowMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_collisionWindow == null || _collisionWindow.IsDisposed)
+            {
+                _collisionWindow = new CollisionWindow();
+                _collisionWindow.Owner = this;
+                _collisionWindow.SetMapRenderControl(_mapRenderControl);
+                _collisionWindow.VisibleChanged += (s, e) => UpdateCollisionWindowMenuItemChecked();
+            }
+
+            if (_collisionWindow.Visible)
+            {
+                _collisionWindow.Hide();
+            }
+            else
+            {
+                CenterWindowOnEditor(_collisionWindow);
+                _collisionWindow.Show();
+            }
+            UpdateCollisionWindowMenuItemChecked();
+        }
+
+        private void ShowTileBrowserMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_tileBrowserWindow == null || _tileBrowserWindow.IsDisposed)
+            {
+                _tileBrowserWindow = new TileBrowserWindow();
+                _tileBrowserWindow.Owner = this;
+                _tileBrowserWindow.SetParentForm(this);
+                _tileBrowserWindow.SetMapRenderControl(_mapRenderControl);
+                _tileBrowserWindow.SetTextureLoader(_textureLoader);
+                _tileBrowserWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _tileBrowserWindow.VisibleChanged += (s, e) => UpdateTileBrowserMenuItemChecked();
+            }
+
+            if (_tileBrowserWindow.Visible)
+            {
+                _tileBrowserWindow.Hide();
+            }
+            else
+            {
+                if (!_tileBrowserWindow.Visible)
+                {
+                    CenterWindowOnEditor(_tileBrowserWindow);
+                }
+                _tileBrowserWindow.Show();
+                _tileBrowserWindow.BringToFront();
+            }
+            UpdateTileBrowserMenuItemChecked();
+        }
+
+        private void UpdateEnemyPropertiesMenuItemChecked()
+        {
+            if (_showEnemyPropertiesMenuItem != null && _enemyPropertiesWindow != null && !_enemyPropertiesWindow.IsDisposed)
+            {
+                _showEnemyPropertiesMenuItem.Checked = _enemyPropertiesWindow.Visible;
+            }
+        }
+
+        private void UpdatePlayerPropertiesMenuItemChecked()
+        {
+            if (_showPlayerPropertiesMenuItem != null && _playerPropertiesWindow != null && !_playerPropertiesWindow.IsDisposed)
+            {
+                _showPlayerPropertiesMenuItem.Checked = _playerPropertiesWindow.Visible;
+            }
+        }
+
+        private void UpdateCameraPropertiesMenuItemChecked()
+        {
+            if (_showCameraPropertiesMenuItem != null && _cameraPropertiesWindow != null && !_cameraPropertiesWindow.IsDisposed)
+            {
+                _showCameraPropertiesMenuItem.Checked = _cameraPropertiesWindow.Visible;
+            }
+        }
+
+        private void UpdateWeaponPropertiesMenuItemChecked()
+        {
+            if (_showWeaponPropertiesMenuItem != null && _weaponPropertiesWindow != null && !_weaponPropertiesWindow.IsDisposed)
+            {
+                _showWeaponPropertiesMenuItem.Checked = _weaponPropertiesWindow.Visible;
+            }
+        }
+
+        private void UpdateCollisionWindowMenuItemChecked()
+        {
+            if (_showCollisionWindowMenuItem != null && _collisionWindow != null && !_collisionWindow.IsDisposed)
+            {
+                _showCollisionWindowMenuItem.Checked = _collisionWindow.Visible;
+            }
+        }
+
+        private void UpdateTileBrowserMenuItemChecked()
+        {
+            if (_showTileBrowserMenuItem != null && _tileBrowserWindow != null && !_tileBrowserWindow.IsDisposed)
+            {
+                _showTileBrowserMenuItem.Checked = _tileBrowserWindow.Visible;
+            }
+        }
+
         private void AboutMenu_Click(object? sender, EventArgs e)
         {
             MessageBox.Show("Project 9 V002", "About", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -654,28 +1074,7 @@ namespace Project9.Editor
 
         private void PropertiesWindowMenuItem_Click(object? sender, EventArgs e)
         {
-            if (_enemyPropertiesWindow == null || _enemyPropertiesWindow.IsDisposed)
-            {
-                _enemyPropertiesWindow = new EnemyPropertiesWindow();
-                _enemyPropertiesWindow.SetSaveCallback(() => SaveEnemyProperties());
-                _enemyPropertiesWindow.Owner = this;
-                _enemyPropertiesWindow.SetParentForm(this);
-                _enemyPropertiesWindow.SetMapRenderControl(_mapRenderControl);
-                
-                // Subscribe to docking changes
-                _enemyPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
-            }
-
-            if (_enemyPropertiesWindow.Visible)
-            {
-                _enemyPropertiesWindow.Hide();
-            }
-            else
-            {
-                // Center the window on the editor form
-                CenterWindowOnEditor(_enemyPropertiesWindow);
-                _enemyPropertiesWindow.Show();
-            }
+            ShowEnemyPropertiesMenuItem_Click(sender, e);
         }
 
         /// <summary>
@@ -815,6 +1214,7 @@ namespace Project9.Editor
                 
                 // Subscribe to docking changes
                 _playerPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _playerPropertiesWindow.VisibleChanged += (s, e) => UpdatePlayerPropertiesMenuItemChecked();
             }
 
             // Set the selected player
@@ -831,6 +1231,7 @@ namespace Project9.Editor
             {
                 _playerPropertiesWindow.BringToFront();
             }
+            UpdatePlayerPropertiesMenuItemChecked();
         }
 
         private async void SaveEnemyProperties()
@@ -872,6 +1273,7 @@ namespace Project9.Editor
                 
                 // Subscribe to docking changes
                 _cameraPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _cameraPropertiesWindow.VisibleChanged += (s, e) => UpdateCameraPropertiesMenuItemChecked();
             }
 
             // Set the selected camera
@@ -888,6 +1290,7 @@ namespace Project9.Editor
             {
                 _cameraPropertiesWindow.BringToFront();
             }
+            UpdateCameraPropertiesMenuItemChecked();
         }
         
         private async void SaveCameraProperties()
@@ -916,6 +1319,7 @@ namespace Project9.Editor
                 
                 // Subscribe to docking changes
                 _weaponPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                _weaponPropertiesWindow.VisibleChanged += (s, e) => UpdateWeaponPropertiesMenuItemChecked();
             }
 
             // Set the selected weapon
@@ -932,6 +1336,7 @@ namespace Project9.Editor
             {
                 _weaponPropertiesWindow.BringToFront();
             }
+            UpdateWeaponPropertiesMenuItemChecked();
         }
         
         private async void SaveWeaponProperties()
@@ -946,12 +1351,110 @@ namespace Project9.Editor
                 MessageBox.Show($"Error saving weapon properties: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+        
+        private void MapRenderControl_EnemyLeftClicked(object? sender, EnemyRightClickedEventArgs e)
+        {
+            // If enemy properties window is visible and blank, populate it
+            if (_enemyPropertiesWindow != null && !_enemyPropertiesWindow.IsDisposed && 
+                _enemyPropertiesWindow.Visible && _enemyPropertiesWindow.CurrentEnemy == null)
+            {
+                _enemyPropertiesWindow.CurrentEnemy = e.Enemy;
+            }
+        }
+        
+        private void MapRenderControl_PlayerLeftClicked(object? sender, PlayerRightClickedEventArgs e)
+        {
+            // If player properties window is visible and blank, populate it
+            if (_playerPropertiesWindow != null && !_playerPropertiesWindow.IsDisposed && 
+                _playerPropertiesWindow.Visible && _playerPropertiesWindow.CurrentPlayer == null)
+            {
+                _playerPropertiesWindow.CurrentPlayer = e.Player;
+            }
+        }
+        
+        private void MapRenderControl_CameraLeftClicked(object? sender, CameraRightClickedEventArgs e)
+        {
+            // If camera properties window is visible and blank, populate it
+            if (_cameraPropertiesWindow != null && !_cameraPropertiesWindow.IsDisposed && 
+                _cameraPropertiesWindow.Visible && _cameraPropertiesWindow.CurrentCamera == null)
+            {
+                _cameraPropertiesWindow.CurrentCamera = e.Camera;
+            }
+        }
+        
+        private void MapRenderControl_WeaponLeftClicked(object? sender, WeaponRightClickedEventArgs e)
+        {
+            // If weapon properties window is visible and blank, populate it
+            if (_weaponPropertiesWindow != null && !_weaponPropertiesWindow.IsDisposed && 
+                _weaponPropertiesWindow.Visible && _weaponPropertiesWindow.CurrentWeapon == null)
+            {
+                _weaponPropertiesWindow.CurrentWeapon = e.Weapon;
+            }
+        }
+
+        private void ShowGrid32x16MenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_mapRenderControl != null && sender is ToolStripMenuItem menuItem)
+            {
+                _mapRenderControl.ShowGrid32x16 = menuItem.Checked;
+            }
+        }
 
         private void ShowGrid64x32MenuItem_Click(object? sender, EventArgs e)
         {
             if (_mapRenderControl != null && sender is ToolStripMenuItem menuItem)
             {
                 _mapRenderControl.ShowGrid64x32 = menuItem.Checked;
+            }
+        }
+
+        private void ShowGrid128x64MenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_mapRenderControl != null && sender is ToolStripMenuItem menuItem)
+            {
+                _mapRenderControl.ShowGrid128x64 = menuItem.Checked;
+            }
+        }
+
+        private void ShowGrid512x256MenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_mapRenderControl != null && sender is ToolStripMenuItem menuItem)
+            {
+                _mapRenderControl.ShowGrid512x256 = menuItem.Checked;
+            }
+        }
+
+        private void ShowGrid1024x512MenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_mapRenderControl != null && sender is ToolStripMenuItem menuItem)
+            {
+                _mapRenderControl.ShowGrid1024x512 = menuItem.Checked;
+            }
+        }
+        
+        private void ShowBoundingBoxesMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (_mapRenderControl != null && sender is ToolStripMenuItem menuItem)
+            {
+                _mapRenderControl.ShowBoundingBoxes = menuItem.Checked;
+            }
+        }
+
+        private void GridSnapComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (_gridSnapComboBox != null && _mapRenderControl != null)
+            {
+                float gridWidth = _gridSnapComboBox.SelectedIndex switch
+                {
+                    0 => 32.0f,   // 32x16
+                    1 => 64.0f,   // 64x32
+                    2 => 128.0f,  // 128x64
+                    3 => 512.0f,  // 512x256
+                    4 => 1024.0f, // 1024x512
+                    _ => 64.0f    // Default
+                };
+                _mapRenderControl.GridSnapWidth = gridWidth;
+                _mapRenderControl.Invalidate(); // Refresh to update grid highlighting
             }
         }
         
@@ -1023,10 +1526,17 @@ namespace Project9.Editor
                 // Save view settings
                 layout.View = new EditorLayout.ViewSettings
                 {
+                    ShowGrid32x16 = _mapRenderControl.ShowGrid32x16,
                     ShowGrid64x32 = _mapRenderControl.ShowGrid64x32,
+                    ShowGrid128x64 = _mapRenderControl.ShowGrid128x64,
+                    ShowGrid512x256 = _mapRenderControl.ShowGrid512x256,
+                    ShowGrid1024x512 = _mapRenderControl.ShowGrid1024x512,
                     TileOpacity = _mapRenderControl.TileOpacity,
                     ShowEnemyCones = _mapRenderControl.ShowEnemyCones,
-                    ShowCameraCones = _mapRenderControl.ShowCameraCones
+                    ShowCameraCones = _mapRenderControl.ShowCameraCones,
+                    CameraPositionX = _mapRenderControl.Camera.Position.X,
+                    CameraPositionY = _mapRenderControl.Camera.Position.Y,
+                    CameraZoom = _mapRenderControl.Camera.Zoom
                 };
 
                 layout.Save();
@@ -1061,6 +1571,7 @@ namespace Project9.Editor
                         _enemyPropertiesWindow.SetParentForm(this);
                         _enemyPropertiesWindow.SetMapRenderControl(_mapRenderControl);
                         _enemyPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                        _enemyPropertiesWindow.VisibleChanged += (s, e) => UpdateEnemyPropertiesMenuItemChecked();
                     }
                     layout.EnemyPropertiesWindow.ApplyToForm(_enemyPropertiesWindow, layout.EnemyPropertiesWindow.IsDocked);
                     if (layout.EnemyPropertiesWindow.IsDocked && !_enemyPropertiesWindow.IsDocked)
@@ -1071,6 +1582,7 @@ namespace Project9.Editor
                     {
                         _enemyPropertiesWindow.Undock();
                     }
+                    UpdateEnemyPropertiesMenuItemChecked();
                 }
 
                 if (layout.PlayerPropertiesWindow != null)
@@ -1083,6 +1595,7 @@ namespace Project9.Editor
                         _playerPropertiesWindow.SetParentForm(this);
                         _playerPropertiesWindow.SetMapRenderControl(_mapRenderControl);
                         _playerPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                        _playerPropertiesWindow.VisibleChanged += (s, e) => UpdatePlayerPropertiesMenuItemChecked();
                     }
                     layout.PlayerPropertiesWindow.ApplyToForm(_playerPropertiesWindow, layout.PlayerPropertiesWindow.IsDocked);
                     if (layout.PlayerPropertiesWindow.IsDocked && !_playerPropertiesWindow.IsDocked)
@@ -1093,6 +1606,7 @@ namespace Project9.Editor
                     {
                         _playerPropertiesWindow.Undock();
                     }
+                    UpdatePlayerPropertiesMenuItemChecked();
                 }
 
                 if (layout.CameraPropertiesWindow != null)
@@ -1105,6 +1619,7 @@ namespace Project9.Editor
                         _cameraPropertiesWindow.SetParentForm(this);
                         _cameraPropertiesWindow.SetMapRenderControl(_mapRenderControl);
                         _cameraPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                        _cameraPropertiesWindow.VisibleChanged += (s, e) => UpdateCameraPropertiesMenuItemChecked();
                     }
                     layout.CameraPropertiesWindow.ApplyToForm(_cameraPropertiesWindow, layout.CameraPropertiesWindow.IsDocked);
                     if (layout.CameraPropertiesWindow.IsDocked && !_cameraPropertiesWindow.IsDocked)
@@ -1115,6 +1630,7 @@ namespace Project9.Editor
                     {
                         _cameraPropertiesWindow.Undock();
                     }
+                    UpdateCameraPropertiesMenuItemChecked();
                 }
 
                 if (layout.WeaponPropertiesWindow != null)
@@ -1127,6 +1643,7 @@ namespace Project9.Editor
                         _weaponPropertiesWindow.SetParentForm(this);
                         _weaponPropertiesWindow.SetMapRenderControl(_mapRenderControl);
                         _weaponPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                        _weaponPropertiesWindow.VisibleChanged += (s, e) => UpdateWeaponPropertiesMenuItemChecked();
                     }
                     layout.WeaponPropertiesWindow.ApplyToForm(_weaponPropertiesWindow, layout.WeaponPropertiesWindow.IsDocked);
                     if (layout.WeaponPropertiesWindow.IsDocked && !_weaponPropertiesWindow.IsDocked)
@@ -1137,6 +1654,7 @@ namespace Project9.Editor
                     {
                         _weaponPropertiesWindow.Undock();
                     }
+                    UpdateWeaponPropertiesMenuItemChecked();
                 }
 
                 if (layout.CollisionWindow != null)
@@ -1146,8 +1664,10 @@ namespace Project9.Editor
                         _collisionWindow = new CollisionWindow();
                         _collisionWindow.Owner = this;
                         _collisionWindow.SetMapRenderControl(_mapRenderControl);
+                        _collisionWindow.VisibleChanged += (s, e) => UpdateCollisionWindowMenuItemChecked();
                     }
                     layout.CollisionWindow.ApplyToForm(_collisionWindow, false);
+                    UpdateCollisionWindowMenuItemChecked();
                 }
 
                 if (layout.TileBrowserWindow != null)
@@ -1160,6 +1680,7 @@ namespace Project9.Editor
                         _tileBrowserWindow.SetMapRenderControl(_mapRenderControl);
                         _tileBrowserWindow.SetTextureLoader(_textureLoader);
                         _tileBrowserWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                        _tileBrowserWindow.VisibleChanged += (s, e) => UpdateTileBrowserMenuItemChecked();
                     }
                     layout.TileBrowserWindow.ApplyToForm(_tileBrowserWindow, layout.TileBrowserWindow.IsDocked);
                     if (layout.TileBrowserWindow.IsDocked && !_tileBrowserWindow.IsDocked)
@@ -1170,20 +1691,49 @@ namespace Project9.Editor
                     {
                         _tileBrowserWindow.Undock();
                     }
+                    UpdateTileBrowserMenuItemChecked();
                 }
 
                 // Load view settings
                 if (layout.View != null)
                 {
+                    _mapRenderControl.ShowGrid32x16 = layout.View.ShowGrid32x16;
                     _mapRenderControl.ShowGrid64x32 = layout.View.ShowGrid64x32;
+                    _mapRenderControl.ShowGrid128x64 = layout.View.ShowGrid128x64;
+                    _mapRenderControl.ShowGrid512x256 = layout.View.ShowGrid512x256;
+                    _mapRenderControl.ShowGrid1024x512 = layout.View.ShowGrid1024x512;
                     _mapRenderControl.TileOpacity = layout.View.TileOpacity;
                     _mapRenderControl.ShowEnemyCones = layout.View.ShowEnemyCones;
                     _mapRenderControl.ShowCameraCones = layout.View.ShowCameraCones;
                     
+                    // Restore camera position and zoom
+                    _mapRenderControl.Camera.Position = new System.Drawing.PointF(
+                        layout.View.CameraPositionX,
+                        layout.View.CameraPositionY
+                    );
+                    _mapRenderControl.Camera.Zoom = layout.View.CameraZoom;
+                    _mapRenderControl.Invalidate(); // Refresh the view
+                    
                     // Update menu item checked states
+                    if (_showGrid32x16MenuItem != null)
+                    {
+                        _showGrid32x16MenuItem.Checked = layout.View.ShowGrid32x16;
+                    }
                     if (_showGrid64x32MenuItem != null)
                     {
                         _showGrid64x32MenuItem.Checked = layout.View.ShowGrid64x32;
+                    }
+                    if (_showGrid128x64MenuItem != null)
+                    {
+                        _showGrid128x64MenuItem.Checked = layout.View.ShowGrid128x64;
+                    }
+                    if (_showGrid512x256MenuItem != null)
+                    {
+                        _showGrid512x256MenuItem.Checked = layout.View.ShowGrid512x256;
+                    }
+                    if (_showGrid1024x512MenuItem != null)
+                    {
+                        _showGrid1024x512MenuItem.Checked = layout.View.ShowGrid1024x512;
                     }
                     if (_showEnemyConesMenuItem != null)
                     {
@@ -1211,6 +1761,7 @@ namespace Project9.Editor
                 _collisionWindow = new CollisionWindow();
                 _collisionWindow.Owner = this;
                 _collisionWindow.SetMapRenderControl(_mapRenderControl);
+                _collisionWindow.VisibleChanged += (s, e) => UpdateCollisionWindowMenuItemChecked();
             }
             
             if (_collisionWindow.Visible)
@@ -1227,6 +1778,7 @@ namespace Project9.Editor
                 CenterWindowOnEditor(_collisionWindow);
                 _collisionWindow.Show();
             }
+            UpdateCollisionWindowMenuItemChecked();
         }
 
         private void ComfyUISettingsMenuItem_Click(object? sender, EventArgs e)

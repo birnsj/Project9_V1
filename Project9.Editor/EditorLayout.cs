@@ -112,10 +112,17 @@ namespace Project9.Editor
 
         public class ViewSettings
         {
+            public bool ShowGrid32x16 { get; set; }
             public bool ShowGrid64x32 { get; set; }
+            public bool ShowGrid128x64 { get; set; }
+            public bool ShowGrid512x256 { get; set; }
+            public bool ShowGrid1024x512 { get; set; }
             public float TileOpacity { get; set; } = 0.7f;
             public bool ShowEnemyCones { get; set; } = true;
             public bool ShowCameraCones { get; set; } = true;
+            public float CameraPositionX { get; set; }
+            public float CameraPositionY { get; set; }
+            public float CameraZoom { get; set; } = 1.0f;
         }
     }
 }

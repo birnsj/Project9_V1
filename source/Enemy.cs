@@ -199,6 +199,13 @@ namespace Project9
             _behaviorChangeInterval = 2.0f + (float)(_random.NextDouble() * 3.0f);
             _isRotating = _random.Next(2) == 0;
             _exclamationTimer = 0.0f;
+            
+            // Set diamond dimensions from EnemyData
+            _diamondWidth = enemyData?.DiamondWidth ?? 128;
+            _diamondHeight = enemyData?.DiamondHeight ?? 64;
+            
+            // Set Z height from EnemyData
+            ZHeight = enemyData?.ZHeight ?? 0.0f;
         }
         
         /// <summary>
@@ -236,6 +243,21 @@ namespace Project9
             if (_enemyData.InitialRotation >= 0)
             {
                 _rotation = _enemyData.InitialRotation;
+            }
+            
+            // Update diamond dimensions and recreate texture if changed
+            bool dimensionsChanged = _diamondWidth != _enemyData.DiamondWidth || _diamondHeight != _enemyData.DiamondHeight;
+            _diamondWidth = _enemyData.DiamondWidth;
+            _diamondHeight = _enemyData.DiamondHeight;
+            
+            // Update Z height
+            ZHeight = _enemyData.ZHeight;
+            
+            if (dimensionsChanged && _diamondTexture != null)
+            {
+                // Dispose old texture and recreate with new dimensions
+                _diamondTexture.Dispose();
+                _diamondTexture = null;
             }
         }
         
@@ -1349,7 +1371,7 @@ namespace Project9
                     drawColor = _color;
                 }
                 
-                Vector2 drawPosition = _position - new Vector2(64, 32); // Offset for 128x64 diamond
+                Vector2 drawPosition = _position - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
                 
                 // Apply pulsing effect for dead enemies
                 if (_isDead)

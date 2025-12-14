@@ -83,6 +83,15 @@ namespace Project9.Shared
         
         [JsonPropertyName("rotation")]
         public float Rotation { get; set; } = 0.0f; // Current rotation in radians
+        
+        [JsonPropertyName("diamondWidth")]
+        public int DiamondWidth { get; set; } = 128; // Diamond width in pixels (default 128)
+        
+        [JsonPropertyName("diamondHeight")]
+        public int DiamondHeight { get; set; } = 64; // Diamond height in pixels (default 64)
+        
+        [JsonPropertyName("zHeight")]
+        public float ZHeight { get; set; } = 0.0f; // Z height for 3D isometric rendering
     }
 
     /// <summary>
@@ -142,6 +151,15 @@ namespace Project9.Shared
         
         [JsonPropertyName("rotation")]
         public float Rotation { get; set; } = 0.0f; // Current rotation in radians
+        
+        [JsonPropertyName("diamondWidth")]
+        public int DiamondWidth { get; set; } = 128; // Diamond width in pixels (default 128)
+        
+        [JsonPropertyName("diamondHeight")]
+        public int DiamondHeight { get; set; } = 64; // Diamond height in pixels (default 64)
+        
+        [JsonPropertyName("zHeight")]
+        public float ZHeight { get; set; } = 0.0f; // Z height for 3D isometric rendering
     }
 
     /// <summary>
@@ -205,6 +223,9 @@ namespace Project9.Shared
         
         [JsonPropertyName("knockbackDuration")]
         public float KnockbackDuration { get; set; }
+        
+        [JsonPropertyName("zHeight")]
+        public float ZHeight { get; set; } = 0.0f; // Z height for 3D isometric rendering
     }
 
     /// <summary>

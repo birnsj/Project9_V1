@@ -488,7 +488,30 @@ namespace Project9.Editor
                 LineColor = Color.FromArgb(230, 230, 230)
             };
             _propertyGrid.PropertyValueChanged += PropertyGrid_PropertyValueChanged;
+            // Bounding box preview panel
+            Panel previewPanel = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 150,
+                BackColor = Color.FromArgb(30, 30, 30),
+                Padding = new Padding(5)
+            };
+            previewPanel.Paint += (s, e) => DrawBoundingBoxPreview(e.Graphics, previewPanel.ClientRectangle);
+            
+            Label previewLabel = new Label
+            {
+                Text = "Bounding Box Preview",
+                Dock = DockStyle.Top,
+                Height = 20,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 8, FontStyle.Bold),
+                BackColor = Color.Transparent
+            };
+            previewPanel.Controls.Add(previewLabel);
+            
             this.Controls.Add(_propertyGrid);
+            this.Controls.Add(previewPanel);
             
             // Enable drag-to-adjust for numeric properties
             var dragHandler = new PropertyGridDragHandler(_propertyGrid, () =>
@@ -606,6 +629,15 @@ namespace Project9.Editor
                 _propertyGrid.SelectedObject = null;
                 _titleLabel.Text = "  Weapon Properties  •  No Selection";
             }
+            // Refresh preview when entity changes
+            foreach (Control control in this.Controls)
+            {
+                if (control is Panel panel && panel.BackColor == Color.FromArgb(30, 30, 30))
+                {
+                    panel.Invalidate();
+                    break;
+                }
+            }
         }
         
         private void _typeTextBox_TextChanged(object? sender, EventArgs e)
@@ -636,6 +668,15 @@ namespace Project9.Editor
             if (_currentWeapon != null && (e.ChangedItem?.Label == "Type" || e.ChangedItem?.Label == "X" || e.ChangedItem?.Label == "Y"))
             {
                 UpdateTitle();
+            }
+            // Refresh preview when properties change
+            foreach (Control control in this.Controls)
+            {
+                if (control is Panel panel && panel.BackColor == Color.FromArgb(30, 30, 30))
+                {
+                    panel.Invalidate();
+                    break;
+                }
             }
         }
 
@@ -764,6 +805,14 @@ namespace Project9.Editor
                     }
                 }
             }
+            
+            [System.ComponentModel.Category("Visual")]
+            [System.ComponentModel.Description("Z height for 3D isometric rendering (vertical offset)")]
+            public float ZHeight
+            {
+                get => _weapon.ZHeight;
+                set => _weapon.ZHeight = Math.Max(0.0f, value);
+            }
         }
         
         /// <summary>
@@ -792,6 +841,101 @@ namespace Project9.Editor
             {
                 get => _gunData.FireRate;
                 set => _gunData.FireRate = value;
+            }
+        }
+        
+        private void DrawBoundingBoxPreview(Graphics g, Rectangle bounds)
+        {
+            if (_currentWeapon == null) return;
+            
+            // Clear background
+            g.Clear(Color.FromArgb(30, 30, 30));
+            
+            // Calculate preview area (leave space for label)
+            Rectangle previewArea = new Rectangle(
+                bounds.X + 5,
+                bounds.Y + 25,
+                bounds.Width - 10,
+                bounds.Height - 30
+            );
+            
+            // Center of preview
+            float centerX = previewArea.X + previewArea.Width / 2.0f;
+            float centerY = previewArea.Y + previewArea.Height / 2.0f;
+            
+            // Weapons don't have diamond dimensions, use defaults
+            float width = 24.0f; // Default weapon width (matches MapRenderControl)
+            float height = 12.0f; // Default weapon height (matches MapRenderControl)
+            float zHeight = _currentWeapon.ZHeight;
+            
+            // Scale factor to fit the bounding box in the preview
+            float maxDimension = Math.Max(width, height);
+            float maxScreenHeight = maxDimension + (zHeight > 0 ? zHeight * 0.5f : 0); // Height + Z offset
+            float scaleX = previewArea.Width / (maxDimension * 1.5f);
+            float scaleY = previewArea.Height / (maxScreenHeight * 1.5f);
+            float scale = Math.Min(scaleX, scaleY);
+            scale = Math.Max(0.1f, Math.Min(scale, 2.0f)); // Clamp scale
+            
+            float halfWidth = width / 2.0f;
+            float halfHeight = height / 2.0f;
+            
+            // ZHeight represents the TOP of the object
+            // Base is always at z = 0, top is at z = zHeight
+            const float heightScale = 0.5f;
+            float zOffsetY = zHeight * heightScale;
+            
+            if (zHeight > 0)
+            {
+                // Draw 3D bounding box using isometric diamond shape
+                // Bottom face corners (z = 0) - base of the object
+                PointF bottomTop = new PointF(centerX, centerY - halfHeight * scale);
+                PointF bottomRight = new PointF(centerX + halfWidth * scale, centerY);
+                PointF bottomBottom = new PointF(centerX, centerY + halfHeight * scale);
+                PointF bottomLeft = new PointF(centerX - halfWidth * scale, centerY);
+                
+                // Top face corners (z = zHeight) - top of the object
+                // In isometric, Z height affects the Y coordinate (moves up in screen space)
+                PointF topTop = new PointF(centerX, centerY - halfHeight * scale - zOffsetY * scale);
+                PointF topRight = new PointF(centerX + halfWidth * scale, centerY - zOffsetY * scale);
+                PointF topBottom = new PointF(centerX, centerY + halfHeight * scale - zOffsetY * scale);
+                PointF topLeft = new PointF(centerX - halfWidth * scale, centerY - zOffsetY * scale);
+                
+                using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
+                {
+                    // Bottom face (isometric diamond at z=0)
+                    g.DrawLine(boxPen, bottomTop, bottomRight);
+                    g.DrawLine(boxPen, bottomRight, bottomBottom);
+                    g.DrawLine(boxPen, bottomBottom, bottomLeft);
+                    g.DrawLine(boxPen, bottomLeft, bottomTop);
+                    
+                    // Top face (isometric diamond at z=zHeight)
+                    g.DrawLine(boxPen, topTop, topRight);
+                    g.DrawLine(boxPen, topRight, topBottom);
+                    g.DrawLine(boxPen, topBottom, topLeft);
+                    g.DrawLine(boxPen, topLeft, topTop);
+                    
+                    // Vertical edges connecting bottom to top
+                    g.DrawLine(boxPen, bottomTop, topTop);
+                    g.DrawLine(boxPen, bottomRight, topRight);
+                    g.DrawLine(boxPen, bottomBottom, topBottom);
+                    g.DrawLine(boxPen, bottomLeft, topLeft);
+                }
+            }
+            else
+            {
+                // Draw 2D diamond outline (isometric shape)
+                PointF[] diamondPoints = new PointF[]
+                {
+                    new PointF(centerX, centerY - halfHeight * scale),           // Top
+                    new PointF(centerX + halfWidth * scale, centerY),              // Right
+                    new PointF(centerX, centerY + halfHeight * scale),            // Bottom
+                    new PointF(centerX - halfWidth * scale, centerY)               // Left
+                };
+                
+                using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
+                {
+                    g.DrawPolygon(boxPen, diamondPoints);
+                }
             }
         }
     }

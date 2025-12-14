@@ -28,12 +28,20 @@ namespace Project9.Editor
         private WeaponData? _draggedWeapon;
         private bool _isDraggingPlayer;
         private PointF _dragOffset;
+        private Point _mouseDownPosition; // Track mouse position when button was pressed
+        private bool _hasMovedDuringDrag; // Track if mouse moved during drag
         private bool _isPanningCamera = false;
         private Point _panStartMousePosition;
+        private bool _showGrid32x16 = false;
         private bool _showGrid64x32 = false;
+        private bool _showGrid128x64 = false;
+        private bool _showGrid512x256 = false;
+        private bool _showGrid1024x512 = false;
         private bool _collisionMode = false;
+        private float _gridSnapWidth = 64.0f; // Default grid snap size (64x32)
         private bool _showEnemyCones = true;
         private bool _showCameraCones = true;
+        private bool _showBoundingBoxes = true; // Default to on
         private List<CollisionCellData> _collisionCells = new List<CollisionCellData>();
         private PointF? _collisionHoverPosition = null; // Snapped grid position for collision hover preview
         private float _tileOpacity = 0.7f; // Default opacity for placed tiles (0.0 to 1.0)
@@ -60,6 +68,57 @@ namespace Project9.Editor
                 Invalidate();
             }
         }
+
+        public bool ShowGrid32x16
+        {
+            get => _showGrid32x16;
+            set
+            {
+                _showGrid32x16 = value;
+                Invalidate();
+            }
+        }
+
+        public bool ShowGrid128x64
+        {
+            get => _showGrid128x64;
+            set
+            {
+                _showGrid128x64 = value;
+                Invalidate();
+            }
+        }
+
+        public bool ShowGrid512x256
+        {
+            get => _showGrid512x256;
+            set
+            {
+                _showGrid512x256 = value;
+                Invalidate();
+            }
+        }
+
+        public bool ShowGrid1024x512
+        {
+            get => _showGrid1024x512;
+            set
+            {
+                _showGrid1024x512 = value;
+                Invalidate();
+            }
+        }
+
+        public float GridSnapWidth
+        {
+            get => _gridSnapWidth;
+            set
+            {
+                _gridSnapWidth = value;
+            }
+        }
+
+        public float GridSnapHeight => _gridSnapWidth / 2.0f; // Always maintain 2:1 aspect ratio
 
         public bool CollisionMode
         {
@@ -92,6 +151,16 @@ namespace Project9.Editor
             set
             {
                 _showCameraCones = value;
+                Invalidate();
+            }
+        }
+        
+        public bool ShowBoundingBoxes
+        {
+            get => _showBoundingBoxes;
+            set
+            {
+                _showBoundingBoxes = value;
                 Invalidate();
             }
         }
@@ -156,6 +225,46 @@ namespace Project9.Editor
         protected virtual void OnWeaponRightClicked(WeaponData weapon)
         {
             WeaponRightClicked?.Invoke(this, new WeaponRightClickedEventArgs(weapon));
+        }
+        
+        /// <summary>
+        /// Event raised when an enemy is left-clicked (not dragged)
+        /// </summary>
+        public event EventHandler<EnemyRightClickedEventArgs>? EnemyLeftClicked;
+
+        protected virtual void OnEnemyLeftClicked(EnemyData enemy)
+        {
+            EnemyLeftClicked?.Invoke(this, new EnemyRightClickedEventArgs(enemy));
+        }
+        
+        /// <summary>
+        /// Event raised when the player is left-clicked (not dragged)
+        /// </summary>
+        public event EventHandler<PlayerRightClickedEventArgs>? PlayerLeftClicked;
+
+        protected virtual void OnPlayerLeftClicked(PlayerData player)
+        {
+            PlayerLeftClicked?.Invoke(this, new PlayerRightClickedEventArgs(player));
+        }
+        
+        /// <summary>
+        /// Event raised when a camera is left-clicked (not dragged)
+        /// </summary>
+        public event EventHandler<CameraRightClickedEventArgs>? CameraLeftClicked;
+
+        protected virtual void OnCameraLeftClicked(CameraData camera, int index)
+        {
+            CameraLeftClicked?.Invoke(this, new CameraRightClickedEventArgs(camera, index));
+        }
+        
+        /// <summary>
+        /// Event raised when a weapon is left-clicked (not dragged)
+        /// </summary>
+        public event EventHandler<WeaponRightClickedEventArgs>? WeaponLeftClicked;
+
+        protected virtual void OnWeaponLeftClicked(WeaponData weapon)
+        {
+            WeaponLeftClicked?.Invoke(this, new WeaponRightClickedEventArgs(weapon));
         }
 
         public MapRenderControl()
@@ -264,11 +373,20 @@ namespace Project9.Editor
 
         private void SnapAllCamerasToGrid()
         {
+            // Cameras are 128x64 diamonds (same as player and enemy), should overlay 4 grid cells (2x2)
             foreach (var camera in _mapData.MapData.Cameras)
             {
-                var snappedPos = SnapToGrid(new PointF(camera.X, camera.Y));
-                camera.X = snappedPos.X;
-                camera.Y = snappedPos.Y;
+                // Calculate camera's bottom corner position
+                float cameraBottomY = camera.Y + 32.0f;
+                PointF cameraBottomCorner = new PointF(camera.X, cameraBottomY);
+                
+                // Find nearest grid intersection point to the camera's bottom corner
+                PointF nearestGridPoint = FindNearestGridPoint(cameraBottomCorner);
+                
+                // Position camera center so its bottom corner aligns with the grid intersection point
+                // This ensures the 128x64 diamond overlays 4 grid cells (2x2)
+                camera.X = nearestGridPoint.X;
+                camera.Y = nearestGridPoint.Y - 32.0f;
             }
         }
 
@@ -460,6 +578,17 @@ namespace Project9.Editor
         {
             _mousePosition = e.Location;
             
+            // Track if mouse moved during drag (to distinguish click from drag)
+            if (_isDragging && !_hasMovedDuringDrag)
+            {
+                int deltaX = Math.Abs(e.X - _mouseDownPosition.X);
+                int deltaY = Math.Abs(e.Y - _mouseDownPosition.Y);
+                if (deltaX > 3 || deltaY > 3) // Small threshold to ignore tiny movements
+                {
+                    _hasMovedDuringDrag = true;
+                }
+            }
+            
             if (_isDragging)
             {
                 PointF worldPos = ScreenToWorld(e.Location);
@@ -508,8 +637,18 @@ namespace Project9.Editor
                 }
                 else if (_draggedCamera != null)
                 {
-                    _draggedCamera.X = targetPos.X;
-                    _draggedCamera.Y = targetPos.Y;
+                    // Cameras are 128x64 diamonds (same as player and enemy), should overlay 4 grid cells (2x2)
+                    // Calculate camera's bottom corner position (where we want to snap)
+                    float cameraBottomY = targetPos.Y + 32.0f;
+                    PointF cameraBottomCorner = new PointF(targetPos.X, cameraBottomY);
+                    
+                    // Find nearest grid intersection point to the camera's bottom corner
+                    PointF nearestGridPoint = FindNearestGridPoint(cameraBottomCorner);
+                    
+                    // Position camera center so its bottom corner aligns with the grid intersection point
+                    // This ensures all 4 corners align with grid points for a 2x2 overlay
+                    _draggedCamera.X = nearestGridPoint.X;
+                    _draggedCamera.Y = nearestGridPoint.Y - 32.0f;
                     Invalidate();
                 }
             }
@@ -647,11 +786,11 @@ namespace Project9.Editor
 
         private PointF FindNearestGridPoint(PointF position)
         {
-            const float gridCellWidth = 64.0f;
-            const float gridCellHalfHeight = 16.0f;
+            float gridCellWidth = _gridSnapWidth;
+            float gridCellHalfHeight = GridSnapHeight / 2.0f;
             
-            // Grid cells per tile: 1024/64 = 16 cells
-            const int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridCellWidth);
+            // Grid cells per tile
+            int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridCellWidth);
             
             // Find the nearest grid intersection point (corner where grid cell diamonds meet)
             float minDistance = float.MaxValue;
@@ -752,10 +891,10 @@ namespace Project9.Editor
 
         private PointF SnapToGrid(PointF position, float entityHalfHeight)
         {
-            const float gridX = 64.0f;
+            float gridX = _gridSnapWidth;
             
-            // Grid cells per tile: 1024/64 = 16 cells
-            const int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridX);
+            // Grid cells per tile
+            int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridX);
             
             // Find the nearest grid cell bottom corner by checking nearby positions
             float minDistance = float.MaxValue;
@@ -786,8 +925,7 @@ namespace Project9.Editor
                             float cellCenterY = tileScreenY + cellOffsetY;
                             
                             // Bottom corner of grid cell is at the bottom point of the diamond
-                            // Grid cells are 64x32, so their halfHeight = 16.0f
-                            const float gridHalfHeight = 16.0f;
+                            float gridHalfHeight = GridSnapHeight / 2.0f;
                             // Bottom point: (centerX, centerY + gridHalfHeight)
                             float cellBottomX = cellCenterX;
                             float cellBottomY = cellCenterY + gridHalfHeight;
@@ -824,6 +962,8 @@ namespace Project9.Editor
             
             if (e.Button == MouseButtons.Left)
             {
+                _mouseDownPosition = e.Location;
+                _hasMovedDuringDrag = false;
                 PointF worldPos = ScreenToWorld(e.Location);
                 
                 // Check if clicking on weapon (check weapons first since they're smaller)
@@ -1047,11 +1187,45 @@ namespace Project9.Editor
             
             if (e.Button == MouseButtons.Left)
             {
+                // Check if this was a click (not a drag) on an entity
+                // Only treat as click if we were dragging an entity but didn't move the mouse
+                if (_isDragging && !_hasMovedDuringDrag)
+                {
+                    // This was a click, not a drag - check which entity was clicked
+                    PointF worldPos = ScreenToWorld(e.Location);
+                    
+                    // Check if clicking on weapon (check weapons first since they're smaller)
+                    if (_draggedWeapon != null)
+                    {
+                        OnWeaponLeftClicked(_draggedWeapon);
+                    }
+                    // Check if clicking on player
+                    else if (_isDraggingPlayer && _mapData.MapData.Player != null)
+                    {
+                        OnPlayerLeftClicked(_mapData.MapData.Player);
+                    }
+                    // Check if clicking on any camera
+                    else if (_draggedCamera != null)
+                    {
+                        int cameraIndex = _mapData.MapData.Cameras.IndexOf(_draggedCamera);
+                        if (cameraIndex >= 0)
+                        {
+                            OnCameraLeftClicked(_draggedCamera, cameraIndex);
+                        }
+                    }
+                    // Check if clicking on any enemy
+                    else if (_draggedEnemy != null)
+                    {
+                        OnEnemyLeftClicked(_draggedEnemy);
+                    }
+                }
+                
                 _isDragging = false;
                 _isDraggingPlayer = false;
                 _draggedEnemy = null;
                 _draggedCamera = null;
                 _draggedWeapon = null;
+                _hasMovedDuringDrag = false;
                 Invalidate();
             }
         }
@@ -1401,10 +1575,27 @@ namespace Project9.Editor
                 }
             }
 
-            // Draw 64x32 grid if enabled
+            // Draw grids from smallest to largest (so larger grids overlay smaller ones)
+            // Highlight the grid that matches the current snap size
+            if (_showGrid32x16)
+            {
+                DrawGrid32x16(g, _gridSnapWidth == 32.0f);
+            }
             if (_showGrid64x32)
             {
-                DrawGrid64x32(g);
+                DrawGrid64x32(g, _gridSnapWidth == 64.0f);
+            }
+            if (_showGrid128x64)
+            {
+                DrawGrid128x64(g, _gridSnapWidth == 128.0f);
+            }
+            if (_showGrid512x256)
+            {
+                DrawGrid512x256(g, _gridSnapWidth == 512.0f);
+            }
+            if (_showGrid1024x512)
+            {
+                DrawGrid1024x512(g, _gridSnapWidth == 1024.0f);
             }
 
             // Draw collision cells
@@ -1418,6 +1609,95 @@ namespace Project9.Editor
 
             // Restore original transform
             g.Transform = originalTransform;
+        }
+        
+        /// <summary>
+        /// Convert 3D world coordinates to 2D screen coordinates using isometric projection
+        /// This matches the game's WorldToScreen3D method for proper isometric perspective
+        /// </summary>
+        private PointF WorldToScreen3D(float worldX, float worldY, float zHeight, float heightScale = 0.5f)
+        {
+            // Isometric projection: same as game's Entity.WorldToScreen3D
+            // This converts world coordinates to isometric screen coordinates
+            float screenX = (worldX - worldY) * (Project9.Shared.IsometricMath.TileWidth / 2.0f);
+            float screenY = (worldX + worldY) * (Project9.Shared.IsometricMath.TileHeight / 2.0f) - zHeight * heightScale;
+            return new PointF(screenX, screenY);
+        }
+        
+        /// <summary>
+        /// Draw a 3D isometric bounding box wireframe
+        /// Entities are drawn at their world X, Y coordinates directly
+        /// We use isometric projection to convert 3D bounding box to screen space
+        /// </summary>
+        private void DrawBoundingBox3D(Graphics g, float centerX, float centerY, float zHeight, float width, float height, float depth)
+        {
+            float halfWidth = width / 2.0f;
+            float halfHeight = height / 2.0f;
+            
+            // ZHeight represents the TOP of the object
+            // Base is always at z = 0, top is at z = zHeight
+            // We draw in world coordinates (Graphics has camera transform applied)
+            
+            // If zHeight is 0 or less, just draw the base diamond
+            if (zHeight <= 0)
+            {
+                // Draw a simple diamond outline at the base
+                PointF[] diamondPoints = new PointF[]
+                {
+                    new PointF(centerX, centerY - halfHeight),
+                    new PointF(centerX + halfWidth, centerY),
+                    new PointF(centerX, centerY + halfHeight),
+                    new PointF(centerX - halfWidth, centerY)
+                };
+                using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
+                {
+                    g.DrawPolygon(boxPen, diamondPoints);
+                }
+                return;
+            }
+            
+            // For 3D bounding box, we use the same isometric diamond shape as the entity
+            // The Graphics object has a camera transform, so we draw in world coordinates
+            // For isometric Z projection, we adjust the Y coordinate based on Z height
+            // Isometric Z projection: screenY = worldY - zHeight * heightScale
+            // Since we're in world space, we adjust the world Y coordinate
+            const float heightScale = 0.5f;
+            float zOffsetY = zHeight * heightScale;
+            
+            // Bottom face corners (z = 0) - base of the object (isometric diamond)
+            PointF bottomTop = new PointF(centerX, centerY - halfHeight);
+            PointF bottomRight = new PointF(centerX + halfWidth, centerY);
+            PointF bottomBottom = new PointF(centerX, centerY + halfHeight);
+            PointF bottomLeft = new PointF(centerX - halfWidth, centerY);
+            
+            // Top face corners (z = zHeight) - top of the object
+            // In isometric, Z height affects the Y coordinate (moves up in screen space)
+            PointF topTop = new PointF(centerX, centerY - halfHeight - zOffsetY);
+            PointF topRight = new PointF(centerX + halfWidth, centerY - zOffsetY);
+            PointF topBottom = new PointF(centerX, centerY + halfHeight - zOffsetY);
+            PointF topLeft = new PointF(centerX - halfWidth, centerY - zOffsetY);
+            
+            // Draw wireframe using bright cyan color with thicker lines
+            using (Pen boxPen = new Pen(Color.Cyan, 3.0f))
+            {
+                // Bottom face (isometric diamond at z=0)
+                g.DrawLine(boxPen, bottomTop, bottomRight);
+                g.DrawLine(boxPen, bottomRight, bottomBottom);
+                g.DrawLine(boxPen, bottomBottom, bottomLeft);
+                g.DrawLine(boxPen, bottomLeft, bottomTop);
+                
+                // Top face (isometric diamond at z=zHeight)
+                g.DrawLine(boxPen, topTop, topRight);
+                g.DrawLine(boxPen, topRight, topBottom);
+                g.DrawLine(boxPen, topBottom, topLeft);
+                g.DrawLine(boxPen, topLeft, topTop);
+                
+                // Vertical edges connecting bottom to top
+                g.DrawLine(boxPen, bottomTop, topTop);
+                g.DrawLine(boxPen, bottomRight, topRight);
+                g.DrawLine(boxPen, bottomBottom, topBottom);
+                g.DrawLine(boxPen, bottomLeft, topLeft);
+            }
         }
 
         private void DrawCollisionCells(Graphics g)
@@ -1501,12 +1781,400 @@ namespace Project9.Editor
             }
         }
 
-        private void DrawGrid64x32(Graphics g)
+        private void DrawGrid32x16(Graphics g, bool isSelected = false)
+        {
+            const float gridX = 32.0f;
+            
+            // Use a lighter, more subtle color for the finer grid (semi-transparent light gray)
+            // Highlight if this is the selected grid
+            Color gridColor = isSelected 
+                ? Color.FromArgb(180, 150, 200, 255) // Brighter blue when selected
+                : Color.FromArgb(60, 100, 100, 100); // Normal light gray
+            int lineWidth = isSelected ? 2 : 1;
+            
+            using (Pen gridPen = new Pen(gridColor, lineWidth))
+            {
+                // Calculate visible area in world coordinates (already transformed by camera)
+                PointF topLeft = ScreenToWorld(new Point(0, 0));
+                PointF bottomRight = ScreenToWorld(new Point(this.Width, this.Height));
+                
+                // Expand bounds to ensure we draw enough grid lines
+                float minX = topLeft.X - IsometricMath.TileWidth * 2;
+                float maxX = bottomRight.X + IsometricMath.TileWidth * 2;
+                float minY = topLeft.Y - IsometricMath.TileHeight * 2;
+                float maxY = bottomRight.Y + IsometricMath.TileHeight * 2;
+                
+                // Convert visible area to tile coordinates to find which tiles are visible
+                var (minTileX, minTileY) = IsometricMath.ScreenToTile(minX, minY);
+                var (maxTileX, maxTileY) = IsometricMath.ScreenToTile(maxX, maxY);
+                
+                // Expand tile range
+                minTileX -= 3;
+                minTileY -= 3;
+                maxTileX += 3;
+                maxTileY += 3;
+                
+                // Grid cells per tile: 1024/32 = 32 cells horizontally, 512/16 = 32 cells vertically
+                const int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridX);
+                
+                // Draw lines parallel to tile edges (isometric lines)
+                // Lines going northeast-southwest (parallel to tile top/bottom edges)
+                for (int tileX = minTileX; tileX <= maxTileX; tileX++)
+                {
+                    for (int gridCell = 0; gridCell < gridCellsPerTile; gridCell++)
+                    {
+                        // Calculate offset within the tile
+                        float cellProgress = gridCell / (float)gridCellsPerTile;
+                        float offsetX = cellProgress * (IsometricMath.TileWidth / 2.0f);
+                        float offsetY = cellProgress * (IsometricMath.TileHeight / 2.0f);
+                        
+                        // Draw line from bottom to top of visible area
+                        // Start from bottom of visible tiles
+                        var (startX, startY) = IsometricMath.TileToScreen(tileX, minTileY);
+                        startX += offsetX;
+                        startY += offsetY;
+                        
+                        // End at top of visible tiles
+                        var (endX, endY) = IsometricMath.TileToScreen(tileX, maxTileY);
+                        endX += offsetX;
+                        endY += offsetY;
+                        
+                        // Clip to visible bounds
+                        if ((startY >= minY && startY <= maxY) || (endY >= minY && endY <= maxY) ||
+                            (startY < minY && endY > maxY) || (startY > maxY && endY < minY))
+                        {
+                            g.DrawLine(gridPen, startX, startY, endX, endY);
+                        }
+                    }
+                }
+                
+                // Lines going northwest-southeast (parallel to tile left/right edges)
+                for (int tileY = minTileY; tileY <= maxTileY; tileY++)
+                {
+                    for (int gridCell = 0; gridCell < gridCellsPerTile; gridCell++)
+                    {
+                        // Calculate offset within the tile (negative X, positive Y)
+                        float cellProgress = gridCell / (float)gridCellsPerTile;
+                        float offsetX = -cellProgress * (IsometricMath.TileWidth / 2.0f);
+                        float offsetY = cellProgress * (IsometricMath.TileHeight / 2.0f);
+                        
+                        // Draw line from left to right of visible area
+                        var (startX, startY) = IsometricMath.TileToScreen(minTileX, tileY);
+                        startX += offsetX;
+                        startY += offsetY;
+                        
+                        var (endX, endY) = IsometricMath.TileToScreen(maxTileX, tileY);
+                        endX += offsetX;
+                        endY += offsetY;
+                        
+                        // Clip to visible bounds
+                        if ((startX >= minX && startX <= maxX) || (endX >= minX && endX <= maxX) ||
+                            (startX < minX && endX > maxX) || (startX > maxX && endX < minX))
+                        {
+                            g.DrawLine(gridPen, startX, startY, endX, endY);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DrawGrid128x64(Graphics g, bool isSelected = false)
+        {
+            const float gridX = 128.0f;
+            
+            // Use a medium color for the 128x64 grid
+            // Highlight if this is the selected grid
+            Color gridColor = isSelected 
+                ? Color.FromArgb(200, 150, 200, 255) // Brighter blue when selected
+                : Color.FromArgb(120, 100, 100, 100); // Normal medium gray
+            int lineWidth = isSelected ? 2 : 1;
+            
+            using (Pen gridPen = new Pen(gridColor, lineWidth))
+            {
+                // Calculate visible area in world coordinates (already transformed by camera)
+                PointF topLeft = ScreenToWorld(new Point(0, 0));
+                PointF bottomRight = ScreenToWorld(new Point(this.Width, this.Height));
+                
+                // Expand bounds to ensure we draw enough grid lines
+                float minX = topLeft.X - IsometricMath.TileWidth * 2;
+                float maxX = bottomRight.X + IsometricMath.TileWidth * 2;
+                float minY = topLeft.Y - IsometricMath.TileHeight * 2;
+                float maxY = bottomRight.Y + IsometricMath.TileHeight * 2;
+                
+                // Convert visible area to tile coordinates to find which tiles are visible
+                var (minTileX, minTileY) = IsometricMath.ScreenToTile(minX, minY);
+                var (maxTileX, maxTileY) = IsometricMath.ScreenToTile(maxX, maxY);
+                
+                // Expand tile range
+                minTileX -= 3;
+                minTileY -= 3;
+                maxTileX += 3;
+                maxTileY += 3;
+                
+                // Grid cells per tile
+                const int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridX);
+                
+                // Draw lines parallel to tile edges (isometric lines)
+                // Lines going northeast-southwest (parallel to tile top/bottom edges)
+                for (int tileX = minTileX; tileX <= maxTileX; tileX++)
+                {
+                    for (int gridCell = 0; gridCell < gridCellsPerTile; gridCell++)
+                    {
+                        // Calculate offset within the tile
+                        float cellProgress = gridCell / (float)gridCellsPerTile;
+                        float offsetX = cellProgress * (IsometricMath.TileWidth / 2.0f);
+                        float offsetY = cellProgress * (IsometricMath.TileHeight / 2.0f);
+                        
+                        // Draw line from bottom to top of visible area
+                        var (startX, startY) = IsometricMath.TileToScreen(tileX, minTileY);
+                        startX += offsetX;
+                        startY += offsetY;
+                        
+                        var (endX, endY) = IsometricMath.TileToScreen(tileX, maxTileY);
+                        endX += offsetX;
+                        endY += offsetY;
+                        
+                        // Clip to visible bounds
+                        if ((startY >= minY && startY <= maxY) || (endY >= minY && endY <= maxY) ||
+                            (startY < minY && endY > maxY) || (startY > maxY && endY < minY))
+                        {
+                            g.DrawLine(gridPen, startX, startY, endX, endY);
+                        }
+                    }
+                }
+                
+                // Lines going northwest-southeast (parallel to tile left/right edges)
+                for (int tileY = minTileY; tileY <= maxTileY; tileY++)
+                {
+                    for (int gridCell = 0; gridCell < gridCellsPerTile; gridCell++)
+                    {
+                        // Calculate offset within the tile (negative X, positive Y)
+                        float cellProgress = gridCell / (float)gridCellsPerTile;
+                        float offsetX = -cellProgress * (IsometricMath.TileWidth / 2.0f);
+                        float offsetY = cellProgress * (IsometricMath.TileHeight / 2.0f);
+                        
+                        // Draw line from left to right of visible area
+                        var (startX, startY) = IsometricMath.TileToScreen(minTileX, tileY);
+                        startX += offsetX;
+                        startY += offsetY;
+                        
+                        var (endX, endY) = IsometricMath.TileToScreen(maxTileX, tileY);
+                        endX += offsetX;
+                        endY += offsetY;
+                        
+                        // Clip to visible bounds
+                        if ((startX >= minX && startX <= maxX) || (endX >= minX && endX <= maxX) ||
+                            (startX < minX && endX > maxX) || (startX > maxX && endX < minX))
+                        {
+                            g.DrawLine(gridPen, startX, startY, endX, endY);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DrawGrid512x256(Graphics g, bool isSelected = false)
+        {
+            const float gridX = 512.0f;
+            
+            // Use a darker color for the 512x256 grid
+            // Highlight if this is the selected grid
+            Color gridColor = isSelected 
+                ? Color.FromArgb(220, 150, 200, 255) // Brighter blue when selected
+                : Color.FromArgb(150, 120, 120, 120); // Normal dark gray
+            int lineWidth = isSelected ? 3 : 2;
+            
+            using (Pen gridPen = new Pen(gridColor, lineWidth))
+            {
+                // Calculate visible area in world coordinates (already transformed by camera)
+                PointF topLeft = ScreenToWorld(new Point(0, 0));
+                PointF bottomRight = ScreenToWorld(new Point(this.Width, this.Height));
+                
+                // Expand bounds to ensure we draw enough grid lines
+                float minX = topLeft.X - IsometricMath.TileWidth * 2;
+                float maxX = bottomRight.X + IsometricMath.TileWidth * 2;
+                float minY = topLeft.Y - IsometricMath.TileHeight * 2;
+                float maxY = bottomRight.Y + IsometricMath.TileHeight * 2;
+                
+                // Convert visible area to tile coordinates to find which tiles are visible
+                var (minTileX, minTileY) = IsometricMath.ScreenToTile(minX, minY);
+                var (maxTileX, maxTileY) = IsometricMath.ScreenToTile(maxX, maxY);
+                
+                // Expand tile range
+                minTileX -= 3;
+                minTileY -= 3;
+                maxTileX += 3;
+                maxTileY += 3;
+                
+                // Grid cells per tile
+                const int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridX);
+                
+                // Draw lines parallel to tile edges (isometric lines)
+                // Lines going northeast-southwest (parallel to tile top/bottom edges)
+                for (int tileX = minTileX; tileX <= maxTileX; tileX++)
+                {
+                    for (int gridCell = 0; gridCell < gridCellsPerTile; gridCell++)
+                    {
+                        // Calculate offset within the tile
+                        float cellProgress = gridCell / (float)gridCellsPerTile;
+                        float offsetX = cellProgress * (IsometricMath.TileWidth / 2.0f);
+                        float offsetY = cellProgress * (IsometricMath.TileHeight / 2.0f);
+                        
+                        // Draw line from bottom to top of visible area
+                        var (startX, startY) = IsometricMath.TileToScreen(tileX, minTileY);
+                        startX += offsetX;
+                        startY += offsetY;
+                        
+                        var (endX, endY) = IsometricMath.TileToScreen(tileX, maxTileY);
+                        endX += offsetX;
+                        endY += offsetY;
+                        
+                        // Clip to visible bounds
+                        if ((startY >= minY && startY <= maxY) || (endY >= minY && endY <= maxY) ||
+                            (startY < minY && endY > maxY) || (startY > maxY && endY < minY))
+                        {
+                            g.DrawLine(gridPen, startX, startY, endX, endY);
+                        }
+                    }
+                }
+                
+                // Lines going northwest-southeast (parallel to tile left/right edges)
+                for (int tileY = minTileY; tileY <= maxTileY; tileY++)
+                {
+                    for (int gridCell = 0; gridCell < gridCellsPerTile; gridCell++)
+                    {
+                        // Calculate offset within the tile (negative X, positive Y)
+                        float cellProgress = gridCell / (float)gridCellsPerTile;
+                        float offsetX = -cellProgress * (IsometricMath.TileWidth / 2.0f);
+                        float offsetY = cellProgress * (IsometricMath.TileHeight / 2.0f);
+                        
+                        // Draw line from left to right of visible area
+                        var (startX, startY) = IsometricMath.TileToScreen(minTileX, tileY);
+                        startX += offsetX;
+                        startY += offsetY;
+                        
+                        var (endX, endY) = IsometricMath.TileToScreen(maxTileX, tileY);
+                        endX += offsetX;
+                        endY += offsetY;
+                        
+                        // Clip to visible bounds
+                        if ((startX >= minX && startX <= maxX) || (endX >= minX && endX <= maxX) ||
+                            (startX < minX && endX > maxX) || (startX > maxX && endX < minX))
+                        {
+                            g.DrawLine(gridPen, startX, startY, endX, endY);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DrawGrid1024x512(Graphics g, bool isSelected = false)
+        {
+            const float gridX = 1024.0f;
+            
+            // Use a darker, thicker line for the 1024x512 grid (tile boundaries)
+            // Highlight if this is the selected grid
+            Color gridColor = isSelected 
+                ? Color.FromArgb(240, 150, 200, 255) // Brighter blue when selected
+                : Color.FromArgb(200, 150, 150, 150); // Normal dark gray
+            int lineWidth = isSelected ? 4 : 3;
+            
+            using (Pen gridPen = new Pen(gridColor, lineWidth))
+            {
+                // Calculate visible area in world coordinates (already transformed by camera)
+                PointF topLeft = ScreenToWorld(new Point(0, 0));
+                PointF bottomRight = ScreenToWorld(new Point(this.Width, this.Height));
+                
+                // Expand bounds to ensure we draw enough grid lines
+                float minX = topLeft.X - IsometricMath.TileWidth * 2;
+                float maxX = bottomRight.X + IsometricMath.TileWidth * 2;
+                float minY = topLeft.Y - IsometricMath.TileHeight * 2;
+                float maxY = bottomRight.Y + IsometricMath.TileHeight * 2;
+                
+                // Convert visible area to tile coordinates to find which tiles are visible
+                var (minTileX, minTileY) = IsometricMath.ScreenToTile(minX, minY);
+                var (maxTileX, maxTileY) = IsometricMath.ScreenToTile(maxX, maxY);
+                
+                // Expand tile range
+                minTileX -= 3;
+                minTileY -= 3;
+                maxTileX += 3;
+                maxTileY += 3;
+                
+                // Grid cells per tile (1024/1024 = 1, so this is just tile boundaries)
+                const int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridX);
+                
+                // Draw lines parallel to tile edges (isometric lines)
+                // Lines going northeast-southwest (parallel to tile top/bottom edges)
+                for (int tileX = minTileX; tileX <= maxTileX; tileX++)
+                {
+                    for (int gridCell = 0; gridCell < gridCellsPerTile; gridCell++)
+                    {
+                        // Calculate offset within the tile
+                        float cellProgress = gridCell / (float)gridCellsPerTile;
+                        float offsetX = cellProgress * (IsometricMath.TileWidth / 2.0f);
+                        float offsetY = cellProgress * (IsometricMath.TileHeight / 2.0f);
+                        
+                        // Draw line from bottom to top of visible area
+                        var (startX, startY) = IsometricMath.TileToScreen(tileX, minTileY);
+                        startX += offsetX;
+                        startY += offsetY;
+                        
+                        var (endX, endY) = IsometricMath.TileToScreen(tileX, maxTileY);
+                        endX += offsetX;
+                        endY += offsetY;
+                        
+                        // Clip to visible bounds
+                        if ((startY >= minY && startY <= maxY) || (endY >= minY && endY <= maxY) ||
+                            (startY < minY && endY > maxY) || (startY > maxY && endY < minY))
+                        {
+                            g.DrawLine(gridPen, startX, startY, endX, endY);
+                        }
+                    }
+                }
+                
+                // Lines going northwest-southeast (parallel to tile left/right edges)
+                for (int tileY = minTileY; tileY <= maxTileY; tileY++)
+                {
+                    for (int gridCell = 0; gridCell < gridCellsPerTile; gridCell++)
+                    {
+                        // Calculate offset within the tile (negative X, positive Y)
+                        float cellProgress = gridCell / (float)gridCellsPerTile;
+                        float offsetX = -cellProgress * (IsometricMath.TileWidth / 2.0f);
+                        float offsetY = cellProgress * (IsometricMath.TileHeight / 2.0f);
+                        
+                        // Draw line from left to right of visible area
+                        var (startX, startY) = IsometricMath.TileToScreen(minTileX, tileY);
+                        startX += offsetX;
+                        startY += offsetY;
+                        
+                        var (endX, endY) = IsometricMath.TileToScreen(maxTileX, tileY);
+                        endX += offsetX;
+                        endY += offsetY;
+                        
+                        // Clip to visible bounds
+                        if ((startX >= minX && startX <= maxX) || (endX >= minX && endX <= maxX) ||
+                            (startX < minX && endX > maxX) || (startX > maxX && endX < minX))
+                        {
+                            g.DrawLine(gridPen, startX, startY, endX, endY);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DrawGrid64x32(Graphics g, bool isSelected = false)
         {
             const float gridX = 64.0f;
             
             // Use a darker, less intense color (semi-transparent dark gray)
-            using (Pen gridPen = new Pen(Color.FromArgb(100, 80, 80, 80), 1))
+            // Highlight if this is the selected grid
+            Color gridColor = isSelected 
+                ? Color.FromArgb(180, 150, 200, 255) // Brighter blue when selected
+                : Color.FromArgb(100, 80, 80, 80); // Normal dark gray
+            int lineWidth = isSelected ? 2 : 1;
+            
+            using (Pen gridPen = new Pen(gridColor, lineWidth))
             {
                 // Calculate visible area in world coordinates (already transformed by camera)
                 PointF topLeft = ScreenToWorld(new Point(0, 0));
@@ -1597,9 +2265,9 @@ namespace Project9.Editor
             float centerX = enemy.X;
             float centerY = enemy.Y;
             
-            // Isometric diamond dimensions (128x64)
-            float halfWidth = 64.0f;  // Half width of the isometric box (128/2)
-            float halfHeight = 32.0f; // Half height of the isometric box (64/2)
+            // Use diamond dimensions from enemy data
+            float halfWidth = enemy.DiamondWidth / 2.0f;
+            float halfHeight = enemy.DiamondHeight / 2.0f;
             
             // Define the 4 points of the isometric diamond
             PointF[] diamondPoints = new PointF[]
@@ -1620,6 +2288,12 @@ namespace Project9.Editor
             using (Pen pen = new Pen(Color.White, 2))
             {
                 g.DrawPolygon(pen, diamondPoints);
+            }
+            
+            // Draw bounding box if enabled
+            if (_showBoundingBoxes)
+            {
+                DrawBoundingBox3D(g, centerX, centerY, enemy.ZHeight, enemy.DiamondWidth, enemy.DiamondHeight, 64.0f);
             }
             
             // Draw sight cone preview - only if ShowEnemyCones is enabled
@@ -1702,9 +2376,9 @@ namespace Project9.Editor
             float centerX = player.X;
             float centerY = player.Y;
             
-            // Isometric diamond dimensions (128x64)
-            float halfWidth = 64.0f;  // Half width of the isometric box (128/2)
-            float halfHeight = 32.0f; // Half height of the isometric box (64/2)
+            // Use diamond dimensions from player data
+            float halfWidth = player.DiamondWidth / 2.0f;
+            float halfHeight = player.DiamondHeight / 2.0f;
             
             // Define the 4 points of the isometric diamond
             PointF[] diamondPoints = new PointF[]
@@ -1725,6 +2399,12 @@ namespace Project9.Editor
             using (Pen pen = new Pen(Color.White, 2))
             {
                 g.DrawPolygon(pen, diamondPoints);
+            }
+            
+            // Draw bounding box if enabled
+            if (_showBoundingBoxes)
+            {
+                DrawBoundingBox3D(g, centerX, centerY, player.ZHeight, player.DiamondWidth, player.DiamondHeight, 64.0f);
             }
             
             // Draw label above the player - use name from JSON if available
@@ -1797,6 +2477,12 @@ namespace Project9.Editor
                 g.DrawPolygon(pen, diamondPoints);
             }
             
+            // Draw bounding box if enabled
+            if (_showBoundingBoxes)
+            {
+                DrawBoundingBox3D(g, centerX, centerY, weapon.ZHeight, 24.0f, 12.0f, 24.0f);
+            }
+            
             // Draw label above the weapon
             string label = $"{weapon.Type} {index}";
             using (Font font = new Font("Arial", 9, FontStyle.Bold))
@@ -1826,9 +2512,9 @@ namespace Project9.Editor
             float centerX = camera.X;
             float centerY = camera.Y;
             
-            // Isometric diamond dimensions (same as enemies/player)
-            float halfWidth = 32.0f;
-            float halfHeight = 16.0f;
+            // Use diamond dimensions from camera data (inherited from EnemyData)
+            float halfWidth = camera.DiamondWidth / 2.0f;
+            float halfHeight = camera.DiamondHeight / 2.0f;
             
             // Define the 4 points of the isometric diamond
             PointF[] diamondPoints = new PointF[]
@@ -1849,6 +2535,12 @@ namespace Project9.Editor
             using (Pen pen = new Pen(Color.White, 2))
             {
                 g.DrawPolygon(pen, diamondPoints);
+            }
+            
+            // Draw bounding box if enabled
+            if (_showBoundingBoxes)
+            {
+                DrawBoundingBox3D(g, centerX, centerY, camera.ZHeight, camera.DiamondWidth, camera.DiamondHeight, 64.0f);
             }
             
             // Draw sight cone preview - only if ShowCameraCones is enabled

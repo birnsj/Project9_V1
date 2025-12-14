@@ -75,6 +75,13 @@ namespace Project9
             _spawnPosition = startPosition; // Store spawn position for respawn
             _deathPulseSpeed = playerData?.DeathPulseSpeed ?? 2.0f;
             
+            // Set diamond dimensions from PlayerData
+            _diamondWidth = playerData?.DiamondWidth ?? 128;
+            _diamondHeight = playerData?.DiamondHeight ?? 64;
+            
+            // Set Z height from PlayerData
+            ZHeight = playerData?.ZHeight ?? 0.0f;
+            
             // Start with both weapons in inventory, default to gun (pistol)
             _weaponInventory[typeof(Sword)] = new Sword();
             _weaponInventory[typeof(Gun)] = new Gun();
@@ -94,6 +101,22 @@ namespace Project9
             _sneakSpeed = _walkSpeed * playerData.SneakSpeedMultiplier;
             _rotation = playerData.Rotation;
             _deathPulseSpeed = playerData.DeathPulseSpeed;
+            
+            // Update diamond dimensions and recreate texture if changed
+            bool dimensionsChanged = _diamondWidth != playerData.DiamondWidth || _diamondHeight != playerData.DiamondHeight;
+            _diamondWidth = playerData.DiamondWidth;
+            _diamondHeight = playerData.DiamondHeight;
+            
+            // Update Z height
+            ZHeight = playerData.ZHeight;
+            
+            if (dimensionsChanged && _diamondTexture != null)
+            {
+                // Dispose old texture and recreate with new dimensions
+                _diamondTexture.Dispose();
+                _diamondTexture = null;
+                InitializeTextures(null); // Recreate diamond texture with new dimensions
+            }
         }
         
         public float Rotation => _rotation;
@@ -1063,7 +1086,7 @@ namespace Project9
 
             if (visible && _diamondTexture != null)
             {
-                Vector2 drawPosition = _position - new Vector2(64, 32); // Offset for 128x64 diamond
+                Vector2 drawPosition = _position - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
                 Color drawColor = _isSneaking ? _sneakColor : _normalColor;
                 
                 // Apply pulsing effect for dead player
