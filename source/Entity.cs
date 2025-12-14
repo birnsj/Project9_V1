@@ -169,7 +169,21 @@ namespace Project9
             {
                 CreateDiamondTexture(graphicsDevice);
             }
+            if (_boundingBoxTexture == null)
+            {
+                CreateBoundingBoxTexture(graphicsDevice);
+            }
             // Collision sphere textures are created on-demand when needed for debug visualization
+        }
+        
+        /// <summary>
+        /// Create a simple white texture for bounding box faces
+        /// </summary>
+        protected void CreateBoundingBoxTexture(GraphicsDevice graphicsDevice)
+        {
+            // Create a small white texture (1x1 pixel, will be stretched)
+            _boundingBoxTexture = new Texture2D(graphicsDevice, 1, 1);
+            _boundingBoxTexture.SetData(new Color[] { Color.White });
         }
 
         /// <summary>
@@ -347,7 +361,8 @@ namespace Project9
                 }
                 
                 Vector2 drawPosition = basePosition - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
-                spriteBatch.Draw(_diamondTexture, drawPosition, _color);
+                // Use lower layerDepth (0.1) so entity sprite draws behind bounding box
+                spriteBatch.Draw(_diamondTexture, drawPosition, null, _color, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0.1f);
             }
         }
         
@@ -440,118 +455,210 @@ namespace Project9
         }
         
         /// <summary>
-        /// Get the 8 vertices of a 3D isometric bounding box
+        /// Get the 8 vertices of a 3D isometric bounding box in world coordinates
         /// Returns vertices in order: bottom face (4 vertices) then top face (4 vertices)
+        /// The SpriteBatch transform will handle camera positioning, we just need world coordinates
         /// </summary>
         public Vector2[] GetBoundingBoxVertices3D()
         {
             float halfWidth = _boundingBoxWidth / 2.0f;
             float halfHeight = _boundingBoxHeight / 2.0f;
-            float halfDepth = _boundingBoxDepth / 2.0f;
+            
+            // For isometric bounding box, we use diamond shape like the entity
+            // Bottom face: isometric diamond at z=0
+            // Top face: isometric diamond at z=zHeight, offset upward in world Y
+            const float heightScale = 0.5f;
+            float zOffsetY = _zHeight * heightScale;
             
             Vector2[] vertices = new Vector2[8];
             
-            // Bottom face vertices (z = 0)
-            vertices[0] = WorldToScreen3D(_position.X - halfWidth, _position.Y - halfDepth, 0.0f);
-            vertices[1] = WorldToScreen3D(_position.X + halfWidth, _position.Y - halfDepth, 0.0f);
-            vertices[2] = WorldToScreen3D(_position.X + halfWidth, _position.Y + halfDepth, 0.0f);
-            vertices[3] = WorldToScreen3D(_position.X - halfWidth, _position.Y + halfDepth, 0.0f);
+            // Bottom face vertices (z = 0) - isometric diamond
+            vertices[0] = new Vector2(_position.X, _position.Y - halfHeight); // Top
+            vertices[1] = new Vector2(_position.X + halfWidth, _position.Y); // Right
+            vertices[2] = new Vector2(_position.X, _position.Y + halfHeight); // Bottom
+            vertices[3] = new Vector2(_position.X - halfWidth, _position.Y); // Left
             
-            // Top face vertices (z = zHeight)
-            vertices[4] = WorldToScreen3D(_position.X - halfWidth, _position.Y - halfDepth, _zHeight);
-            vertices[5] = WorldToScreen3D(_position.X + halfWidth, _position.Y - halfDepth, _zHeight);
-            vertices[6] = WorldToScreen3D(_position.X + halfWidth, _position.Y + halfDepth, _zHeight);
-            vertices[7] = WorldToScreen3D(_position.X - halfWidth, _position.Y + halfDepth, _zHeight);
+            // Top face vertices (z = zHeight) - same diamond shape, offset upward by Z height
+            vertices[4] = new Vector2(_position.X, _position.Y - halfHeight - zOffsetY); // Top
+            vertices[5] = new Vector2(_position.X + halfWidth, _position.Y - zOffsetY); // Right
+            vertices[6] = new Vector2(_position.X, _position.Y + halfHeight - zOffsetY); // Bottom
+            vertices[7] = new Vector2(_position.X - halfWidth, _position.Y - zOffsetY); // Left
             
             return vertices;
         }
         
         /// <summary>
-        /// Draw the 3D isometric bounding box with sprite texture
+        /// Draw the 3D isometric bounding box using the same approach as the editor
+        /// Uses filled polygons with 30% opacity cyan, matching editor rendering
         /// </summary>
         public virtual void DrawBoundingBox3D(SpriteBatch spriteBatch)
         {
             if (!_showBoundingBox) return;
             
-            Vector2[] vertices = GetBoundingBoxVertices3D();
+            float halfWidth = _boundingBoxWidth / 2.0f;
+            float halfHeight = _boundingBoxHeight / 2.0f;
             
-            // If we have a texture, draw it on the faces
-            if (_boundingBoxTexture != null)
+            // Cyan color for wireframe
+            Color cyanColor = new Color((byte)0, (byte)255, (byte)255, (byte)255);
+            
+            // ZHeight represents the TOP of the object
+            // Base is always at z = 0, top is at z = zHeight
+            // We draw in world coordinates (SpriteBatch has camera transform applied)
+            
+            // If zHeight is 0 or less, just draw the base diamond
+            if (_zHeight <= 0)
             {
-                DrawBoundingBoxFaces(spriteBatch, vertices);
+                // Draw a simple diamond outline at the base
+                Vector2[] diamondPoints = new Vector2[]
+                {
+                    new Vector2(_position.X, _position.Y - halfHeight),
+                    new Vector2(_position.X + halfWidth, _position.Y),
+                    new Vector2(_position.X, _position.Y + halfHeight),
+                    new Vector2(_position.X - halfWidth, _position.Y)
+                };
+                
+                // Draw outline only
+                DrawPolygonOutline(spriteBatch, diamondPoints, cyanColor, 3.0f);
+                return;
             }
-            else
-            {
-                // Draw wireframe if no texture
-                DrawBoundingBoxWireframe(spriteBatch, vertices);
-            }
-        }
-        
-        /// <summary>
-        /// Draw bounding box faces with sprite texture
-        /// </summary>
-        private void DrawBoundingBoxFaces(SpriteBatch spriteBatch, Vector2[] vertices)
-        {
-            if (_boundingBoxTexture == null) return;
             
-            // Draw bottom face
-            DrawQuad(spriteBatch, _boundingBoxTexture, 
-                vertices[0], vertices[1], vertices[2], vertices[3], 
-                new Color(_color.R, _color.G, _color.B, (byte)200));
+            // For 3D bounding box, we use the same isometric diamond shape as the entity
+            // For isometric Z projection, we adjust the Y coordinate based on Z height
+            const float heightScale = 0.5f;
+            float zOffsetY = _zHeight * heightScale;
             
-            // Draw top face
-            DrawQuad(spriteBatch, _boundingBoxTexture,
-                vertices[4], vertices[5], vertices[6], vertices[7],
-                new Color(_color.R, _color.G, _color.B, (byte)200));
+            // Bottom face corners (z = 0) - base of the object (isometric diamond)
+            Vector2 bottomTop = new Vector2(_position.X, _position.Y - halfHeight);
+            Vector2 bottomRight = new Vector2(_position.X + halfWidth, _position.Y);
+            Vector2 bottomBottom = new Vector2(_position.X, _position.Y + halfHeight);
+            Vector2 bottomLeft = new Vector2(_position.X - halfWidth, _position.Y);
             
-            // Draw front face (facing camera)
-            DrawQuad(spriteBatch, _boundingBoxTexture,
-                vertices[0], vertices[1], vertices[5], vertices[4],
-                new Color(_color.R, _color.G, _color.B, (byte)180));
+            // Top face corners (z = zHeight) - top of the object
+            // In isometric, Z height affects the Y coordinate (moves up in screen space)
+            Vector2 topTop = new Vector2(_position.X, _position.Y - halfHeight - zOffsetY);
+            Vector2 topRight = new Vector2(_position.X + halfWidth, _position.Y - zOffsetY);
+            Vector2 topBottom = new Vector2(_position.X, _position.Y + halfHeight - zOffsetY);
+            Vector2 topLeft = new Vector2(_position.X - halfWidth, _position.Y - zOffsetY);
             
-            // Draw back face
-            DrawQuad(spriteBatch, _boundingBoxTexture,
-                vertices[3], vertices[2], vertices[6], vertices[7],
-                new Color(_color.R, _color.G, _color.B, (byte)180));
-            
-            // Draw left face
-            DrawQuad(spriteBatch, _boundingBoxTexture,
-                vertices[0], vertices[3], vertices[7], vertices[4],
-                new Color(_color.R, _color.G, _color.B, (byte)160));
-            
-            // Draw right face
-            DrawQuad(spriteBatch, _boundingBoxTexture,
-                vertices[1], vertices[2], vertices[6], vertices[5],
-                new Color(_color.R, _color.G, _color.B, (byte)160));
-        }
-        
-        /// <summary>
-        /// Draw bounding box wireframe (for debug visualization)
-        /// </summary>
-        private void DrawBoundingBoxWireframe(SpriteBatch spriteBatch, Vector2[] vertices)
-        {
+            // Draw wireframe outline using cyan color
             Texture2D? lineTexture = GetWhiteTexture(spriteBatch.GraphicsDevice);
             if (lineTexture == null) return;
             
-            Color lineColor = new Color(255, 255, 0, 200); // Yellow wireframe
+            // Bottom face (isometric diamond at z=0) - draw first so it's behind
+            DrawLine(spriteBatch, lineTexture, bottomTop, bottomRight, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomRight, bottomBottom, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomBottom, bottomLeft, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomLeft, bottomTop, cyanColor, 3.0f);
             
-            // Bottom face edges
-            DrawLine(spriteBatch, lineTexture, vertices[0], vertices[1], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[1], vertices[2], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[2], vertices[3], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[3], vertices[0], lineColor);
+            // Vertical edges connecting bottom to top - draw these before top face so they're visible
+            DrawLine(spriteBatch, lineTexture, bottomTop, topTop, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomRight, topRight, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomBottom, topBottom, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomLeft, topLeft, cyanColor, 3.0f);
             
-            // Top face edges
-            DrawLine(spriteBatch, lineTexture, vertices[4], vertices[5], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[5], vertices[6], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[6], vertices[7], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[7], vertices[4], lineColor);
+            // Top face (isometric diamond at z=zHeight) - draw last so it's on top
+            DrawLine(spriteBatch, lineTexture, topTop, topRight, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, topRight, topBottom, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, topBottom, topLeft, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, topLeft, topTop, cyanColor, 3.0f);
+        }
+        
+        /// <summary>
+        /// Draw a filled polygon using SpriteBatch (matches editor's FillPolygon)
+        /// Uses a simple approach: draw multiple overlapping lines to approximate filled polygon
+        /// For better quality, would need custom shader or texture generation
+        /// </summary>
+        private void DrawFilledPolygon(SpriteBatch spriteBatch, Vector2[] vertices, Color color)
+        {
+            if (vertices.Length < 3) return;
             
-            // Vertical edges
-            DrawLine(spriteBatch, lineTexture, vertices[0], vertices[4], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[1], vertices[5], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[2], vertices[6], lineColor);
-            DrawLine(spriteBatch, lineTexture, vertices[3], vertices[7], lineColor);
+            Texture2D? whiteTexture = GetWhiteTexture(spriteBatch.GraphicsDevice);
+            if (whiteTexture == null) return;
+            
+            // For a simple filled polygon approximation, draw lines between all vertices
+            // This creates a filled appearance for convex polygons
+            // For quads (4 vertices), draw two triangles
+            if (vertices.Length == 4)
+            {
+                // Draw as two triangles: [0,1,2] and [0,2,3]
+                DrawFilledTriangle(spriteBatch, whiteTexture, vertices[0], vertices[1], vertices[2], color);
+                DrawFilledTriangle(spriteBatch, whiteTexture, vertices[0], vertices[2], vertices[3], color);
+            }
+            else
+            {
+                // For other polygons, triangulate by fanning from first vertex
+                for (int i = 1; i < vertices.Length - 1; i++)
+                {
+                    DrawFilledTriangle(spriteBatch, whiteTexture, vertices[0], vertices[i], vertices[i + 1], color);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Draw a filled triangle by drawing many overlapping horizontal lines
+        /// This creates a solid fill appearance
+        /// </summary>
+        private void DrawFilledTriangle(SpriteBatch spriteBatch, Texture2D texture, Vector2 v0, Vector2 v1, Vector2 v2, Color color)
+        {
+            // Sort vertices by Y
+            Vector2[] sorted = new Vector2[] { v0, v1, v2 };
+            Array.Sort(sorted, (a, b) => a.Y.CompareTo(b.Y));
+            
+            Vector2 top = sorted[0];
+            Vector2 mid = sorted[1];
+            Vector2 bot = sorted[2];
+            
+            if (Math.Abs(bot.Y - top.Y) < 0.1f) return;
+            
+            // Draw top half (top to mid)
+            if (Math.Abs(mid.Y - top.Y) > 0.1f)
+            {
+                int topY = (int)Math.Ceiling(top.Y);
+                int midY = (int)Math.Floor(mid.Y);
+                for (int y = topY; y <= midY; y++)
+                {
+                    float t = (y - top.Y) / (mid.Y - top.Y);
+                    float x1 = top.X + (mid.X - top.X) * t;
+                    float x2 = top.X + (bot.X - top.X) * ((y - top.Y) / (bot.Y - top.Y));
+                    if (x1 > x2) { float temp = x1; x1 = x2; x2 = temp; }
+                    if (x2 - x1 > 0.1f)
+                        DrawLine(spriteBatch, texture, new Vector2(x1, y), new Vector2(x2, y), color, 2.0f);
+                }
+            }
+            
+            // Draw bottom half (mid to bot)
+            if (Math.Abs(bot.Y - mid.Y) > 0.1f)
+            {
+                int midY = (int)Math.Ceiling(mid.Y);
+                int botY = (int)Math.Floor(bot.Y);
+                for (int y = midY; y <= botY; y++)
+                {
+                    float t = (y - mid.Y) / (bot.Y - mid.Y);
+                    float x1 = mid.X + (bot.X - mid.X) * t;
+                    float x2 = top.X + (bot.X - top.X) * ((y - top.Y) / (bot.Y - top.Y));
+                    if (x1 > x2) { float temp = x1; x1 = x2; x2 = temp; }
+                    if (x2 - x1 > 0.1f)
+                        DrawLine(spriteBatch, texture, new Vector2(x1, y), new Vector2(x2, y), color, 2.0f);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Draw a polygon outline using SpriteBatch (matches editor's DrawPolygon)
+        /// </summary>
+        private void DrawPolygonOutline(SpriteBatch spriteBatch, Vector2[] vertices, Color color, float thickness)
+        {
+            if (vertices.Length < 2) return;
+            
+            Texture2D? lineTexture = GetWhiteTexture(spriteBatch.GraphicsDevice);
+            if (lineTexture == null) return;
+            
+            // Draw lines between consecutive vertices, and close the polygon
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                int next = (i + 1) % vertices.Length;
+                DrawLine(spriteBatch, lineTexture, vertices[i], vertices[next], color, thickness);
+            }
         }
         
         /// <summary>
@@ -581,25 +688,52 @@ namespace Project9
         /// <summary>
         /// Draw a line between two points
         /// </summary>
-        private void DrawLine(SpriteBatch spriteBatch, Texture2D texture, Vector2 start, Vector2 end, Color color)
+        private void DrawLine(SpriteBatch spriteBatch, Texture2D texture, Vector2 start, Vector2 end, Color color, float thickness = 3.0f)
         {
             Vector2 edge = end - start;
-            float angle = (float)Math.Atan2(edge.Y, edge.X);
             float length = edge.Length();
             
-            if (length <= 0) return;
+            if (length <= 0.1f) return;
             
-            spriteBatch.Draw(
-                texture,
-                start,
-                null,
-                color,
-                angle,
-                Vector2.Zero,
-                new Vector2(length, 2.0f),
-                SpriteEffects.None,
-                0.0f
-            );
+            // Check if line is mostly vertical (Y component is much larger than X component)
+            // This handles both perfectly vertical lines and near-vertical lines in isometric projection
+            bool isMostlyVertical = Math.Abs(edge.Y) > Math.Abs(edge.X) * 10.0f && Math.Abs(edge.Y) > 0.1f;
+            
+            // Use higher layerDepth (0.99) so bounding box draws on top of entity sprites and tiles
+            const float boundingBoxLayerDepth = 0.99f;
+            
+            if (isMostlyVertical)
+            {
+                // Mostly vertical line - draw as a vertical rectangle for better visibility
+                float halfThickness = thickness / 2.0f;
+                float minY = Math.Min(start.Y, end.Y);
+                float maxY = Math.Max(start.Y, end.Y);
+                float centerX = (start.X + end.X) / 2.0f;
+                
+                Rectangle destRect = new Rectangle(
+                    (int)(centerX - halfThickness),
+                    (int)minY,
+                    (int)thickness,
+                    (int)(maxY - minY)
+                );
+                spriteBatch.Draw(texture, destRect, null, color, 0f, Vector2.Zero, SpriteEffects.None, boundingBoxLayerDepth);
+            }
+            else
+            {
+                // Non-vertical line - use rotated texture approach
+                float angle = (float)Math.Atan2(edge.Y, edge.X);
+                spriteBatch.Draw(
+                    texture,
+                    start,
+                    null,
+                    color,
+                    angle,
+                    new Vector2(0, 0.5f),
+                    new Vector2(length, thickness),
+                    SpriteEffects.None,
+                    boundingBoxLayerDepth
+                );
+            }
         }
         
         private static Texture2D? _whiteTexture;
@@ -623,4 +757,5 @@ namespace Project9
         public abstract void Update(float deltaTime);
     }
 }
+
 

@@ -21,6 +21,7 @@ namespace Project9
         ToggleDiagnostics,
         ResetDiagnostics,
         ToggleLog,
+        ToggleBoundingBoxes,
         ReturnCamera,
         PanCamera,
         Zoom,
@@ -116,6 +117,11 @@ namespace Project9
                      !_previousKeyboardState.IsKeyDown(Keys.V))
             {
                 inputEvent = new InputEvent { Action = InputAction.ToggleCollisionSpheres };
+            }
+            else if (currentKeyboardState.IsKeyDown(Keys.B) && 
+                     !_previousKeyboardState.IsKeyDown(Keys.B))
+            {
+                inputEvent = new InputEvent { Action = InputAction.ToggleBoundingBoxes };
             }
             else if (currentKeyboardState.IsKeyDown(Keys.P) && 
                      !_previousKeyboardState.IsKeyDown(Keys.P))

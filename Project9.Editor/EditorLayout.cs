@@ -118,6 +118,7 @@ namespace Project9.Editor
             public bool ShowGrid512x256 { get; set; }
             public bool ShowGrid1024x512 { get; set; }
             public float TileOpacity { get; set; } = 0.7f;
+            public float BoundingBoxOpacity { get; set; } = 0.3f;
             public bool ShowEnemyCones { get; set; } = true;
             public bool ShowCameraCones { get; set; } = true;
             public float CameraPositionX { get; set; }
@@ -126,4 +127,3 @@ namespace Project9.Editor
         }
     }
 }
-

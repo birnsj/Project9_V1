@@ -79,6 +79,11 @@ namespace Project9
             _diamondWidth = playerData?.DiamondWidth ?? 128;
             _diamondHeight = playerData?.DiamondHeight ?? 64;
             
+            // Set bounding box dimensions to match diamond dimensions
+            _boundingBoxWidth = _diamondWidth;
+            _boundingBoxHeight = _diamondHeight;
+            _boundingBoxDepth = _diamondWidth; // Use width for depth
+            
             // Set Z height from PlayerData
             ZHeight = playerData?.ZHeight ?? 0.0f;
             
@@ -1072,6 +1077,9 @@ namespace Project9
 
         public override void Draw(SpriteBatch spriteBatch)
         {
+            // Call base Draw to render bounding box
+            base.Draw(spriteBatch);
+            
             if (_diamondTexture == null)
             {
                 CreateDiamondTexture(spriteBatch.GraphicsDevice);
@@ -1101,7 +1109,8 @@ namespace Project9
                     );
                 }
                 
-                spriteBatch.Draw(_diamondTexture, drawPosition, drawColor);
+                // Use lower layerDepth (0.1) so entity sprite draws behind bounding box
+                spriteBatch.Draw(_diamondTexture, drawPosition, null, drawColor, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0.1f);
             }
             
             // Weapon drawing is now handled in RenderSystem after direction indicator

@@ -2048,7 +2048,7 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 0
+      "zHeight": 128
     },
     {
       "name": "",
@@ -2071,7 +2071,7 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 0
+      "zHeight": 256
     },
     {
       "name": "Dave",
@@ -2094,7 +2094,7 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 0
+      "zHeight": 128
     },
     {
       "name": "",
@@ -2117,7 +2117,7 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 0
+      "zHeight": 256
     }
   ],
   "cameras": [
@@ -2206,7 +2206,7 @@
       "rotation": 4.189,
       "diamondWidth": 64,
       "diamondHeight": 32,
-      "zHeight": 0
+      "zHeight": 64
     },
     {
       "sweepAngle": 90,
@@ -2233,9 +2233,9 @@
       "maxChaseRange": 1024,
       "initialRotation": -1,
       "rotation": 1.047,
-      "diamondWidth": 128,
-      "diamondHeight": 64,
-      "zHeight": 0
+      "diamondWidth": 64,
+      "diamondHeight": 32,
+      "zHeight": 64
     },
     {
       "sweepAngle": 90,
@@ -2311,6 +2311,6 @@
     "rotation": 0,
     "diamondWidth": 128,
     "diamondHeight": 64,
-    "zHeight": 128
+    "zHeight": 256
   }
 }

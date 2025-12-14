@@ -124,6 +124,7 @@ namespace Project9.Editor
                     ShowGrid512x256 = _mapRenderControl.ShowGrid512x256,
                     ShowGrid1024x512 = _mapRenderControl.ShowGrid1024x512,
                     TileOpacity = _mapRenderControl.TileOpacity,
+                    BoundingBoxOpacity = _mapRenderControl.BoundingBoxOpacity,
                     ShowEnemyCones = _mapRenderControl.ShowEnemyCones,
                     ShowCameraCones = _mapRenderControl.ShowCameraCones,
                     CameraPositionX = _mapRenderControl.Camera.Position.X,
@@ -268,6 +269,10 @@ namespace Project9.Editor
             ToolStripMenuItem tileOpacityMenuItem = new ToolStripMenuItem("Tile Opacity...");
             tileOpacityMenuItem.Click += TileOpacityMenuItem_Click;
             viewMenu.DropDownItems.Add(tileOpacityMenuItem);
+            
+            ToolStripMenuItem boundingBoxOpacityMenuItem = new ToolStripMenuItem("Bounding Box Opacity...");
+            boundingBoxOpacityMenuItem.Click += BoundingBoxOpacityMenuItem_Click;
+            viewMenu.DropDownItems.Add(boundingBoxOpacityMenuItem);
             
             _menuStrip.Items.Add(viewMenu);
             
@@ -542,6 +547,7 @@ namespace Project9.Editor
                 _mapRenderControl.ShowGrid512x256 = savedLayout.View.ShowGrid512x256;
                 _mapRenderControl.ShowGrid1024x512 = savedLayout.View.ShowGrid1024x512;
                 _mapRenderControl.TileOpacity = savedLayout.View.TileOpacity;
+                _mapRenderControl.BoundingBoxOpacity = savedLayout.View.BoundingBoxOpacity;
                 _mapRenderControl.ShowEnemyCones = savedLayout.View.ShowEnemyCones;
                 _mapRenderControl.ShowCameraCones = savedLayout.View.ShowCameraCones;
                 
@@ -1467,6 +1473,16 @@ namespace Project9.Editor
                 dialog.ShowDialog();
             }
         }
+        
+        private void BoundingBoxOpacityMenuItem_Click(object? sender, EventArgs e)
+        {
+            using (BoundingBoxOpacityDialog dialog = new BoundingBoxOpacityDialog())
+            {
+                dialog.Owner = this;
+                dialog.SetMapRenderControl(_mapRenderControl);
+                dialog.ShowDialog();
+            }
+        }
 
         private void SaveLayoutMenuItem_Click(object? sender, EventArgs e)
         {
@@ -1703,6 +1719,7 @@ namespace Project9.Editor
                     _mapRenderControl.ShowGrid512x256 = layout.View.ShowGrid512x256;
                     _mapRenderControl.ShowGrid1024x512 = layout.View.ShowGrid1024x512;
                     _mapRenderControl.TileOpacity = layout.View.TileOpacity;
+                    _mapRenderControl.BoundingBoxOpacity = layout.View.BoundingBoxOpacity;
                     _mapRenderControl.ShowEnemyCones = layout.View.ShowEnemyCones;
                     _mapRenderControl.ShowCameraCones = layout.View.ShowCameraCones;
                     

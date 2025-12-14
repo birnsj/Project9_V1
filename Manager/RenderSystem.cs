@@ -21,6 +21,7 @@ namespace Project9
         private bool _showCollision = true;
         private bool _showCollisionSpheres = true; // Show collision spheres for entities
         private bool _showPath = false; // Show path debug visualization
+        private bool _showBoundingBoxes = true; // Show bounding boxes for entities (default on)
         private Texture2D? _gridLineTexture;
         private Texture2D? _collisionDiamondTexture;
         private Texture2D? _clickEffectTexture;
@@ -65,6 +66,12 @@ namespace Project9
             set => _showPath = value;
         }
         
+        public bool ShowBoundingBoxes
+        {
+            get => _showBoundingBoxes;
+            set => _showBoundingBoxes = value;
+        }
+
         public int LastDrawCallCount => _lastDrawCallCount;
 
         public RenderSystem(GraphicsDevice graphicsDevice, SpriteBatch spriteBatch, IsometricMap map, ViewportCamera camera, SpriteFont? uiFont)
@@ -188,6 +195,9 @@ namespace Project9
                 if (camera.Position.X + 100 >= minX && camera.Position.X - 100 <= maxX &&
                     camera.Position.Y + 100 >= minY && camera.Position.Y - 100 <= maxY)
                 {
+                    // Set bounding box visibility based on toggle
+                    camera.ShowBoundingBox = _showBoundingBoxes;
+                    
                     // Only draw sight cone if camera is alive
                     if (camera.IsAlive)
                     {
@@ -224,6 +234,9 @@ namespace Project9
                 // Skip drawing aggro/sight cone for dead enemies
                 if (!enemy.IsAlive && !enemy.IsDead)
                     continue;
+                
+                // Set bounding box visibility based on toggle
+                enemy.ShowBoundingBox = _showBoundingBoxes;
                 
                 if (!enemy.IsDead)
                 {
@@ -304,6 +317,9 @@ namespace Project9
             }
 
             // Draw player
+            // Set bounding box visibility based on toggle
+            entityManager.Player.ShowBoundingBox = _showBoundingBoxes;
+            
             if (!entityManager.Player.IsDead && _showCollisionSpheres)
             {
                 entityManager.Player.DrawCollisionSphere(_spriteBatch);

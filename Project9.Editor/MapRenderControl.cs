@@ -42,6 +42,7 @@ namespace Project9.Editor
         private bool _showEnemyCones = true;
         private bool _showCameraCones = true;
         private bool _showBoundingBoxes = true; // Default to on
+        private float _boundingBoxOpacity = 0.3f; // Default opacity for bounding boxes (0.0 to 1.0)
         private List<CollisionCellData> _collisionCells = new List<CollisionCellData>();
         private PointF? _collisionHoverPosition = null; // Snapped grid position for collision hover preview
         private float _tileOpacity = 0.7f; // Default opacity for placed tiles (0.0 to 1.0)
@@ -55,6 +56,16 @@ namespace Project9.Editor
             set
             {
                 _tileOpacity = Math.Clamp(value, 0.0f, 1.0f);
+                Invalidate();
+            }
+        }
+
+        public float BoundingBoxOpacity
+        {
+            get => _boundingBoxOpacity;
+            set
+            {
+                _boundingBoxOpacity = Math.Clamp(value, 0.0f, 1.0f);
                 Invalidate();
             }
         }
@@ -1634,6 +1645,10 @@ namespace Project9.Editor
             float halfWidth = width / 2.0f;
             float halfHeight = height / 2.0f;
             
+            // Calculate opacity for filled faces (used in both 2D and 3D cases)
+            int alpha = (int)(_boundingBoxOpacity * 255.0f);
+            Color fillColor = Color.FromArgb(alpha, Color.Cyan);
+            
             // ZHeight represents the TOP of the object
             // Base is always at z = 0, top is at z = zHeight
             // We draw in world coordinates (Graphics has camera transform applied)
@@ -1649,6 +1664,14 @@ namespace Project9.Editor
                     new PointF(centerX, centerY + halfHeight),
                     new PointF(centerX - halfWidth, centerY)
                 };
+                
+                // Draw filled diamond with semi-transparent cyan
+                using (SolidBrush fillBrush = new SolidBrush(fillColor))
+                {
+                    g.FillPolygon(fillBrush, diamondPoints);
+                }
+                
+                // Draw outline
                 using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
                 {
                     g.DrawPolygon(boxPen, diamondPoints);
@@ -1677,7 +1700,32 @@ namespace Project9.Editor
             PointF topBottom = new PointF(centerX, centerY + halfHeight - zOffsetY);
             PointF topLeft = new PointF(centerX - halfWidth, centerY - zOffsetY);
             
-            // Draw wireframe using bright cyan color with thicker lines
+            // Draw filled faces with semi-transparent cyan
+            using (SolidBrush fillBrush = new SolidBrush(fillColor))
+            {
+                // Bottom face (isometric diamond at z=0)
+                PointF[] bottomFace = new PointF[] { bottomTop, bottomRight, bottomBottom, bottomLeft };
+                g.FillPolygon(fillBrush, bottomFace);
+                
+                // Top face (isometric diamond at z=zHeight)
+                PointF[] topFace = new PointF[] { topTop, topRight, topBottom, topLeft };
+                g.FillPolygon(fillBrush, topFace);
+                
+                // Draw side faces (4 trapezoids connecting bottom to top)
+                PointF[] sideFace1 = new PointF[] { bottomTop, bottomRight, topRight, topTop };
+                g.FillPolygon(fillBrush, sideFace1);
+                
+                PointF[] sideFace2 = new PointF[] { bottomRight, bottomBottom, topBottom, topRight };
+                g.FillPolygon(fillBrush, sideFace2);
+                
+                PointF[] sideFace3 = new PointF[] { bottomBottom, bottomLeft, topLeft, topBottom };
+                g.FillPolygon(fillBrush, sideFace3);
+                
+                PointF[] sideFace4 = new PointF[] { bottomLeft, bottomTop, topTop, topLeft };
+                g.FillPolygon(fillBrush, sideFace4);
+            }
+            
+            // Draw wireframe outline using bright cyan color with thicker lines
             using (Pen boxPen = new Pen(Color.Cyan, 3.0f))
             {
                 // Bottom face (isometric diamond at z=0)

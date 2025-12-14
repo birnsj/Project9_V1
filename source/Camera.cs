@@ -335,6 +335,9 @@ namespace Project9
 
         public override void Draw(SpriteBatch spriteBatch)
         {
+            // Call base Draw to render bounding box
+            base.Draw(spriteBatch);
+            
             if (_diamondTexture == null)
             {
                 CreateDiamondTexture(spriteBatch.GraphicsDevice);
@@ -352,7 +355,8 @@ namespace Project9
                 Vector2 drawPosition = _position - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
                 // Use blue color for camera, red tint if detected player
                 Color drawColor = _cameraHasDetectedPlayer ? Color.Red : Color.Blue;
-                spriteBatch.Draw(_diamondTexture, drawPosition, drawColor);
+                // Use lower layerDepth (0.1) so entity sprite draws behind bounding box
+                spriteBatch.Draw(_diamondTexture, drawPosition, null, drawColor, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0.1f);
             }
         }
         

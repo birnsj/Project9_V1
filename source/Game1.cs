@@ -358,6 +358,11 @@ namespace Project9
                         Console.WriteLine($"[Game] Collision spheres: {(_renderSystem.ShowCollisionSpheres ? "ON" : "OFF")}");
                         break;
                     
+                    case InputAction.ToggleBoundingBoxes:
+                        _renderSystem.ShowBoundingBoxes = !_renderSystem.ShowBoundingBoxes;
+                        Console.WriteLine($"[Game] Bounding boxes: {(_renderSystem.ShowBoundingBoxes ? "ON" : "OFF")}");
+                        break;
+                    
                     case InputAction.TogglePath:
                         _renderSystem.ShowPath = !_renderSystem.ShowPath;
                         Console.WriteLine($"[Game] Path debug: {(_renderSystem.ShowPath ? "ON" : "OFF")}");

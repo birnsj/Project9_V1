@@ -973,6 +973,36 @@ namespace Project9.Editor
                 PointF topBottom = new PointF(centerX, centerY + halfHeight * scale - zOffsetY * scale);
                 PointF topLeft = new PointF(centerX - halfWidth * scale, centerY - zOffsetY * scale);
                 
+                // Use default opacity for preview (matches MapRenderControl default)
+                const float previewOpacity = 0.3f;
+                int alpha = (int)(previewOpacity * 255.0f);
+                Color fillColor = Color.FromArgb(alpha, Color.Cyan);
+                
+                // Draw filled faces with semi-transparent cyan
+                using (SolidBrush fillBrush = new SolidBrush(fillColor))
+                {
+                    // Bottom face (isometric diamond at z=0)
+                    PointF[] bottomFace = new PointF[] { bottomTop, bottomRight, bottomBottom, bottomLeft };
+                    g.FillPolygon(fillBrush, bottomFace);
+                    
+                    // Top face (isometric diamond at z=zHeight)
+                    PointF[] topFace = new PointF[] { topTop, topRight, topBottom, topLeft };
+                    g.FillPolygon(fillBrush, topFace);
+                    
+                    // Draw side faces (4 trapezoids connecting bottom to top)
+                    PointF[] sideFace1 = new PointF[] { bottomTop, bottomRight, topRight, topTop };
+                    g.FillPolygon(fillBrush, sideFace1);
+                    
+                    PointF[] sideFace2 = new PointF[] { bottomRight, bottomBottom, topBottom, topRight };
+                    g.FillPolygon(fillBrush, sideFace2);
+                    
+                    PointF[] sideFace3 = new PointF[] { bottomBottom, bottomLeft, topLeft, topBottom };
+                    g.FillPolygon(fillBrush, sideFace3);
+                    
+                    PointF[] sideFace4 = new PointF[] { bottomLeft, bottomTop, topTop, topLeft };
+                    g.FillPolygon(fillBrush, sideFace4);
+                }
+                
                 using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
                 {
                     // Bottom face (isometric diamond at z=0)
@@ -1005,6 +1035,16 @@ namespace Project9.Editor
                     new PointF(centerX - halfWidth * scale, centerY)               // Left
                 };
                 
+                // Draw filled diamond with semi-transparent cyan
+                const float previewOpacity = 0.3f;
+                int alpha = (int)(previewOpacity * 255.0f);
+                Color fillColor = Color.FromArgb(alpha, Color.Cyan);
+                using (SolidBrush fillBrush = new SolidBrush(fillColor))
+                {
+                    g.FillPolygon(fillBrush, diamondPoints);
+                }
+                
+                // Draw outline
                 using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
                 {
                     g.DrawPolygon(boxPen, diamondPoints);
