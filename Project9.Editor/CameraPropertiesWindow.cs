@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using Project9.Shared;
@@ -13,6 +12,7 @@ namespace Project9.Editor
     {
         private PropertyGrid _propertyGrid = null!;
         private CameraData? _currentCamera;
+        private Button _saveButton = null!;
         private Button _dockButton = null!;
         private Label _titleLabel = null!;
         private TextBox _nameTextBox = null!;
@@ -20,7 +20,6 @@ namespace Project9.Editor
         private Action? _onSaveCallback;
         private bool _isDocked = false;
         private Form? _parentForm;
-        private MapRenderControl? _mapRenderControl;
         private bool _isDragging = false;
         private Point _dragStartPosition;
         private Point _dragStartMousePosition;
@@ -57,7 +56,7 @@ namespace Project9.Editor
         
         public void SetMapRenderControl(MapRenderControl mapRenderControl)
         {
-            _mapRenderControl = mapRenderControl;
+            // Store reference to MapRenderControl if needed in the future
         }
         
         public bool IsDocked => _isDocked;
@@ -66,8 +65,32 @@ namespace Project9.Editor
         
         private void ParentForm_Resize(object? sender, EventArgs e)
         {
-            // When docked in a panel, the panel handles resizing automatically via Dock.Fill
-            // No manual position calculation needed
+            if (_isDocked && _parentForm != null)
+            {
+                // Recalculate position when parent form resizes
+                int menuStripHeight = 0;
+                int toolStripHeight = 0;
+                
+                foreach (Control control in _parentForm.Controls)
+                {
+                    if (control is MenuStrip menuStrip)
+                    {
+                        menuStripHeight = menuStrip.Height;
+                    }
+                    else if (control is ToolStrip toolStrip && control != _parentForm.MainMenuStrip)
+                    {
+                        toolStripHeight = toolStrip.Height;
+                    }
+                }
+                
+                int topPosition = menuStripHeight + toolStripHeight;
+                int bottomPosition = _parentForm.ClientSize.Height - (_parentForm.Controls.OfType<StatusStrip>().FirstOrDefault()?.Height ?? 0);
+                
+                // When docked vertically, maintain fixed width and position on right side
+                this.Location = new Point(_parentForm.ClientSize.Width - this.Width, topPosition);
+                this.Height = bottomPosition - topPosition;
+                // Width stays at 300 (fixed)
+            }
         }
 
         public void DockToRight()
@@ -75,86 +98,68 @@ namespace Project9.Editor
             if (_parentForm == null) return;
 
             _isDocked = true;
-
-            // Get the dock panel from EditorForm
-            Panel? dockPanel = null;
-            if (_parentForm is EditorForm editorForm)
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.TopLevel = false; // Must be set before Parent
+            this.Parent = _parentForm; // This makes it a child window
+            
+            // Calculate the top position based on menu strip and tool strip heights
+            int menuStripHeight = 0;
+            int toolStripHeight = 0;
+            
+            foreach (Control control in _parentForm.Controls)
             {
-                dockPanel = editorForm.GetRightDockPanel();
-            }
-
-            if (dockPanel != null)
-            {
-                // Suspend layout on both form and panel
-                this.SuspendLayout();
-                dockPanel.SuspendLayout();
-                
-                // Hide the form first before changing parent
-                this.Hide();
-                
-                // Clear Owner - this is critical for embedding
-                this.Owner = null;
-                
-                // Remove from any previous parent
-                if (this.Parent != null)
+                if (control is MenuStrip menuStrip)
                 {
-                    this.Parent.Controls.Remove(this);
+                    menuStripHeight = menuStrip.Height;
                 }
-                
-                // Set properties before setting parent
-                this.FormBorderStyle = FormBorderStyle.None;
-                this.ShowInTaskbar = false;
-                this.TopLevel = false; // Must be false BEFORE setting Parent
-                
-                // Hide other windows in the panel
-                foreach (Control control in dockPanel.Controls)
+                else if (control is ToolStrip toolStrip && control != _parentForm.MainMenuStrip)
                 {
-                    if (control is Form otherForm && otherForm != this)
+                    toolStripHeight = toolStrip.Height;
+                }
+            }
+            
+            int topPosition = menuStripHeight + toolStripHeight;
+            int bottomPosition = _parentForm.ClientSize.Height - (_parentForm.Controls.OfType<StatusStrip>().FirstOrDefault()?.Height ?? 0);
+            
+            // Dock vertically on the right side
+            this.Dock = DockStyle.None;
+            this.Width = 300; // Fixed width for properties window
+            this.Location = new Point(_parentForm.ClientSize.Width - this.Width, topPosition);
+            this.Height = bottomPosition - topPosition;
+            this.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            
+            // Ensure the window is visible and on top
+            this.Show();
+            this.BringToFront();
+            
+            // Ensure the properties window is on top of other controls (but below menu/tool/status strips)
+            if (_parentForm.Controls.Contains(this))
+            {
+                // Move to top of z-order, but keep menu/tool/status strips on top
+                int maxIndex = _parentForm.Controls.Count - 1;
+                int targetIndex = maxIndex;
+                
+                // Find the index of the last menu/tool/status strip
+                for (int i = _parentForm.Controls.Count - 1; i >= 0; i--)
+                {
+                    var control = _parentForm.Controls[i];
+                    if (control is MenuStrip || control is ToolStrip || control is StatusStrip)
                     {
-                        otherForm.Visible = false;
+                        targetIndex = i;
+                        break;
                     }
                 }
                 
-                // Now set the parent - this embeds it into the panel
-                this.Parent = dockPanel;
-                this.Dock = DockStyle.Fill;
-                this.Margin = new Padding(3);
-                dockPanel.Width = 300 + 6; // Add 6 pixels for border (3px padding on each side)
-                
-                // Resume layout
-                this.ResumeLayout(false);
-                dockPanel.ResumeLayout(false);
-                
-                // Show the splitter when panel is visible
-                if (_parentForm is EditorForm editorForm2)
-                {
-                    editorForm2.ShowRightSplitter();
-                }
-                dockPanel.Visible = true;
-                dockPanel.Invalidate(); // Refresh border drawing
-                
-                // Show the form after it's embedded
-                this.Show();
-                this.BringToFront();
+                // Place properties window just below the strips
+                _parentForm.Controls.SetChildIndex(this, targetIndex);
             }
-            else
-            {
-                // Fallback to old behavior if not EditorForm
-                this.Hide();
-                this.FormBorderStyle = FormBorderStyle.None;
-                this.TopLevel = false;
-                this.Parent = _parentForm;
-                this.Dock = DockStyle.Right;
-                this.Width = 300;
-                this.Show();
-            }
-
+            
             // Update button text
             if (_dockButton != null)
             {
                 _dockButton.Text = "Undock";
             }
-
+            
             // Notify that docking changed
             DockingChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -164,134 +169,19 @@ namespace Project9.Editor
             if (!_isDocked) return;
 
             _isDocked = false;
-            
-            // Suspend layout during undocking
-            this.SuspendLayout();
-            
-            // Remove from dock panel
-            Panel? dockPanel = null;
-            if (_parentForm is EditorForm editorForm)
-            {
-                dockPanel = editorForm.GetRightDockPanel();
-            }
-
-            if (dockPanel != null && dockPanel == this.Parent)
-            {
-                dockPanel.SuspendLayout();
-                this.Margin = Padding.Empty;
-                
-                // Remove any splitter associated with this window
-                List<Control> controlsToRemove = new List<Control>();
-                bool foundThisWindow = false;
-                for (int i = dockPanel.Controls.Count - 1; i >= 0; i--)
-                {
-                    Control control = dockPanel.Controls[i];
-                    if (control == this)
-                    {
-                        foundThisWindow = true;
-                    }
-                    else if (foundThisWindow && control is Splitter)
-                    {
-                        controlsToRemove.Add(control);
-                        break; // Only remove the splitter right before this window
-                    }
-                }
-                foreach (var control in controlsToRemove)
-                {
-                    dockPanel.Controls.Remove(control);
-                }
-                
-                // Clear parent first, then remove from panel
-                this.Parent = null;
-                this.TopLevel = true; // Must be set BEFORE removing from controls
-                dockPanel.Controls.Remove(this);
-                
-                // Adjust remaining windows to fill space
-                int remainingWindows = 0;
-                foreach (Control control in dockPanel.Controls)
-                {
-                    if (control is Form form && form.Visible)
-                    {
-                        remainingWindows++;
-                    }
-                }
-                
-                if (remainingWindows > 0)
-                {
-                    int panelHeight = dockPanel.Height > 0 ? dockPanel.Height : 600;
-                    if (remainingWindows == 1)
-                    {
-                        // Only one window left - make it Fill
-                        foreach (Control control in dockPanel.Controls)
-                        {
-                            if (control is Form form && form.Visible)
-                            {
-                                form.Dock = DockStyle.Fill;
-                                form.Margin = new Padding(3);
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // Multiple windows - share space equally
-                        int newWindowHeight = Math.Max(200, panelHeight / remainingWindows);
-                        foreach (Control control in dockPanel.Controls)
-                        {
-                            if (control is Form form && form.Visible)
-                            {
-                                form.Dock = DockStyle.Top;
-                                form.Height = newWindowHeight;
-                            }
-                        }
-                    }
-                }
-                
-                // Resume dock panel layout
-                dockPanel.ResumeLayout(false);
-                
-                if (remainingWindows == 0)
-                {
-                    dockPanel.Visible = false;
-                    dockPanel.Width = 0;
-                    // Hide the splitter when panel is empty
-                    if (_parentForm is EditorForm editorForm2)
-                    {
-                        var splitter = editorForm2.GetRightSplitter();
-                        if (splitter != null)
-                        {
-                            splitter.Visible = false;
-                        }
-                    }
-                }
-                else
-                {
-                    dockPanel.Invalidate(); // Refresh border drawing
-                }
-            }
-
-            // Set form properties
             this.Dock = DockStyle.None;
+            this.Parent = null;
+            this.TopLevel = true;
             this.FormBorderStyle = FormBorderStyle.SizableToolWindow;
-            this.ShowInTaskbar = false;
             
-            // Restore Owner AFTER setting TopLevel = true
+            // Position near parent form
             if (_parentForm != null)
-            {
-                this.Owner = _parentForm;
-            }
-            
-            // Position near parent form (only if not being positioned by drag)
-            if (_parentForm != null && this.Location.X == 0 && this.Location.Y == 0)
             {
                 this.Location = new Point(
                     _parentForm.Right + 10,
                     _parentForm.Top + 50
                 );
             }
-            
-            // Resume layout
-            this.ResumeLayout(false);
             
             // Update button text
             if (_dockButton != null)
@@ -424,7 +314,7 @@ namespace Project9.Editor
             namePanel.Controls.Add(_nameLabel);
             namePanel.Controls.Add(_nameTextBox);
             this.Controls.Add(namePanel);
-
+            
             // Property grid with better styling
             _propertyGrid = new PropertyGrid
             {
@@ -438,7 +328,7 @@ namespace Project9.Editor
             };
             _propertyGrid.PropertyValueChanged += (s, e) =>
             {
-                _onSaveCallback?.Invoke(); // Auto-save on change
+                _saveButton.Enabled = true;
                 // Update title if Name, X, or Y changed
                 if (_currentCamera != null && (e.ChangedItem?.Label == "Name" || e.ChangedItem?.Label == "X" || e.ChangedItem?.Label == "Y"))
                 {
@@ -446,55 +336,45 @@ namespace Project9.Editor
                 }
             };
             
-            // Enable drag-to-adjust for numeric properties
-            var dragHandler = new PropertyGridDragHandler(_propertyGrid, () =>
-            {
-                _onSaveCallback?.Invoke(); // Auto-save on change
-                _mapRenderControl?.Invalidate(); // Refresh the editor view
-            });
-            
-            // Bottom panel with save button
-            Panel bottomPanel = new Panel
+            // Modern styled save button panel
+            Panel buttonPanel = new Panel
             {
                 Dock = DockStyle.Bottom,
-                Height = 60,
+                Height = 50,
                 BackColor = Color.FromArgb(250, 250, 250),
-                Padding = new Padding(10, 10, 10, 10)
+                Padding = new Padding(10, 8, 10, 8)
             };
-            bottomPanel.Paint += (s, e) =>
+            buttonPanel.Paint += (s, e) =>
             {
                 // Draw top border
                 using (var pen = new Pen(Color.FromArgb(220, 220, 220), 1))
                 {
-                    e.Graphics.DrawLine(pen, 0, 0, bottomPanel.Width, 0);
+                    e.Graphics.DrawLine(pen, 0, 0, buttonPanel.Width, 0);
                 }
             };
             
-            // Large save button (blue)
-            Button saveButton = new Button
+            _saveButton = new Button
             {
-                Text = "Save",
+                Text = "Save Changes",
                 Dock = DockStyle.Fill,
-                Height = 40,
+                Height = 34,
+                Enabled = false,
                 FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(0, 120, 215),
                 Cursor = Cursors.Hand
             };
-            saveButton.FlatAppearance.BorderSize = 0;
-            saveButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 150, 255);
-            saveButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(0, 100, 180);
-            saveButton.Click += (s, e) =>
-            {
-                _onSaveCallback?.Invoke();
-            };
+            _saveButton.FlatAppearance.BorderSize = 0;
+            _saveButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 102, 204);
+            _saveButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(0, 80, 160);
+            _saveButton.Click += (s, e) => SaveProperties();
             
-            bottomPanel.Controls.Add(saveButton);
+            buttonPanel.Controls.Add(_saveButton);
             
             // Layout
             this.Controls.Add(_propertyGrid);
-            this.Controls.Add(bottomPanel);
+            this.Controls.Add(buttonPanel);
             this.Controls.Add(titlePanel);
             
             // Enable dragging for title panel to undock
@@ -540,21 +420,19 @@ namespace Project9.Editor
                 if (deltaX > 5 || deltaY > 5)
                 {
                     _isDragging = false;
-                    
-                    // Undock first
                     Undock();
                     
-                    // Wait a moment for Windows to process the undocking
-                    Application.DoEvents();
-                    
-                    // Set new position based on current mouse position (screen coordinates)
-                    Point screenPos = Control.MousePosition;
-                    // Offset to center the window on the mouse
-                    this.Location = new Point(
-                        screenPos.X - this.Width / 2,
-                        screenPos.Y - 10
-                    );
-                    this.BringToFront();
+                    // Set new position based on current mouse position
+                    if (_parentForm != null)
+                    {
+                        Point screenPos = Control.MousePosition;
+                        Point clientPos = _parentForm.PointToClient(screenPos);
+                        // Offset to center the window on the mouse
+                        this.Location = new Point(
+                            clientPos.X - this.Width / 2,
+                            clientPos.Y - 10
+                        );
+                    }
                 }
             }
         }
@@ -579,7 +457,7 @@ namespace Project9.Editor
                 // Create a wrapper to expose properties with categories
                 _propertyGrid.SelectedObject = new CameraPropertiesWrapper(_currentCamera);
                 UpdateTitle();
-                // Data loaded
+                _saveButton.Enabled = false; // Reset save button since we're loading existing data
             }
             else
             {
@@ -588,6 +466,7 @@ namespace Project9.Editor
                 _nameTextBox.TextChanged += _nameTextBox_TextChanged;
                 _propertyGrid.SelectedObject = null;
                 _titleLabel.Text = "  Camera Properties  •  No Selection";
+                _saveButton.Enabled = false;
             }
         }
         
@@ -596,7 +475,7 @@ namespace Project9.Editor
             if (_currentCamera != null)
             {
                 _currentCamera.Name = _nameTextBox.Text;
-                _onSaveCallback?.Invoke(); // Auto-save on change
+                _saveButton.Enabled = true;
                 UpdateTitle();
             }
         }
@@ -615,6 +494,20 @@ namespace Project9.Editor
             _onSaveCallback = callback;
         }
 
+        private void SaveProperties()
+        {
+            if (_currentCamera != null)
+            {
+                // Force PropertyGrid to commit any pending edits
+                _propertyGrid.Refresh();
+                
+                // Trigger save callback
+                _onSaveCallback?.Invoke();
+                
+                _saveButton.Enabled = false;
+                MessageBox.Show("Camera properties saved.", "Save", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
         
         /// <summary>
         /// Wrapper class to organize camera properties in categories for PropertyGrid

@@ -1349,7 +1349,7 @@ namespace Project9
                     drawColor = _color;
                 }
                 
-                Vector2 drawPosition = _position - new Vector2(32, 16);
+                Vector2 drawPosition = _position - new Vector2(64, 32); // Offset for 128x64 diamond
                 
                 // Apply pulsing effect for dead enemies
                 if (_isDead)

@@ -37,6 +37,9 @@ namespace Project9.Editor
         private List<CollisionCellData> _collisionCells = new List<CollisionCellData>();
         private PointF? _collisionHoverPosition = null; // Snapped grid position for collision hover preview
         private float _tileOpacity = 0.7f; // Default opacity for placed tiles (0.0 to 1.0)
+        private List<(int x, int y, TerrainType type)>? _cachedTiles = null; // Cached sorted tile list
+        private bool _tilesDirty = true; // Flag to indicate tiles need rebuilding
+        private bool _pendingInvalidate = false; // Flag to throttle invalidate calls
 
         public float TileOpacity
         {
@@ -199,8 +202,14 @@ namespace Project9.Editor
             _mapData = mapData;
             _textureLoader = textureLoader;
             
+            // Mark tiles as dirty to rebuild cache
+            _tilesDirty = true;
+            
             // Load collision cells
             LoadCollisionCells();
+            
+            // Snap player to grid
+            SnapPlayerToGrid();
             
             // Snap all enemies to grid
             SnapAllEnemiesToGrid();
@@ -214,13 +223,42 @@ namespace Project9.Editor
             Invalidate();
         }
 
+        private void SnapPlayerToGrid()
+        {
+            // Player is 128x64 diamond (2x the size of a 64x32 grid cell)
+            // It should overlay 4 grid cells (2x2), so corners align with grid intersection points
+            if (_mapData.MapData.Player != null)
+            {
+                // Calculate player's bottom corner position
+                float playerBottomY = _mapData.MapData.Player.Y + 32.0f;
+                PointF playerBottomCorner = new PointF(_mapData.MapData.Player.X, playerBottomY);
+                
+                // Find nearest grid intersection point to the player's bottom corner
+                PointF nearestGridPoint = FindNearestGridPoint(playerBottomCorner);
+                
+                // Position player center so its bottom corner aligns with the grid intersection point
+                // This ensures the 128x64 diamond overlays 4 grid cells (2x2)
+                _mapData.MapData.Player.X = nearestGridPoint.X;
+                _mapData.MapData.Player.Y = nearestGridPoint.Y - 32.0f;
+            }
+        }
+
         private void SnapAllEnemiesToGrid()
         {
+            // Enemies are 128x64 diamonds (same as player), should overlay 4 grid cells (2x2)
             foreach (var enemy in _mapData.MapData.Enemies)
             {
-                var snappedPos = SnapToGrid(new PointF(enemy.X, enemy.Y));
-                enemy.X = snappedPos.X;
-                enemy.Y = snappedPos.Y;
+                // Calculate enemy's bottom corner position
+                float enemyBottomY = enemy.Y + 32.0f;
+                PointF enemyBottomCorner = new PointF(enemy.X, enemyBottomY);
+                
+                // Find nearest grid intersection point to the enemy's bottom corner
+                PointF nearestGridPoint = FindNearestGridPoint(enemyBottomCorner);
+                
+                // Position enemy center so its bottom corner aligns with the grid intersection point
+                // This ensures the 128x64 diamond overlays 4 grid cells (2x2)
+                enemy.X = nearestGridPoint.X;
+                enemy.Y = nearestGridPoint.Y - 32.0f;
             }
         }
 
@@ -352,8 +390,13 @@ namespace Project9.Editor
 
             if (panDirection.X != 0 || panDirection.Y != 0)
             {
+                PointF oldPos = _camera.Position;
                 _camera.Pan(panDirection, deltaTime);
-                Invalidate();
+                // Only invalidate if camera position actually changed
+                if (oldPos != _camera.Position)
+                {
+                    RequestInvalidate();
+                }
             }
         }
 
@@ -377,40 +420,39 @@ namespace Project9.Editor
 
         private void MapRenderControl_MouseWheel(object? sender, MouseEventArgs e)
         {
-            if (this.Focused)
+            // Allow mouse wheel scrolling when mouse is over the control, regardless of focus
+            // This fixes the issue where dragging a window causes focus to shift and breaks scrolling
+            // Get mouse position in screen coordinates
+            Point mouseScreen = e.Location;
+            
+            // Convert to world coordinates before zoom
+            PointF mouseWorldBefore = ScreenToWorld(mouseScreen);
+            
+            // Calculate zoom amount (use a percentage-based zoom for smoother feel)
+            float zoomFactor = e.Delta > 0 ? 1.1f : 1.0f / 1.1f;
+            float oldZoom = _camera.Zoom;
+            float newZoom = Math.Clamp(oldZoom * zoomFactor, 0.5f, 4.0f);
+            
+            // Only apply if zoom actually changed (within limits)
+            if (Math.Abs(newZoom - oldZoom) > 0.001f)
             {
-                // Get mouse position in screen coordinates
-                Point mouseScreen = e.Location;
+                _camera.Zoom = newZoom;
                 
-                // Convert to world coordinates before zoom
-                PointF mouseWorldBefore = ScreenToWorld(mouseScreen);
+                // Convert mouse position to world coordinates after zoom
+                PointF mouseWorldAfter = ScreenToWorld(mouseScreen);
                 
-                // Calculate zoom amount (use a percentage-based zoom for smoother feel)
-                float zoomFactor = e.Delta > 0 ? 1.1f : 1.0f / 1.1f;
-                float oldZoom = _camera.Zoom;
-                float newZoom = Math.Clamp(oldZoom * zoomFactor, 0.5f, 4.0f);
+                // Adjust camera position to keep the mouse point in the same world position
+                PointF worldOffset = new PointF(
+                    mouseWorldBefore.X - mouseWorldAfter.X,
+                    mouseWorldBefore.Y - mouseWorldAfter.Y
+                );
                 
-                // Only apply if zoom actually changed (within limits)
-                if (Math.Abs(newZoom - oldZoom) > 0.001f)
-                {
-                    _camera.Zoom = newZoom;
-                    
-                    // Convert mouse position to world coordinates after zoom
-                    PointF mouseWorldAfter = ScreenToWorld(mouseScreen);
-                    
-                    // Adjust camera position to keep the mouse point in the same world position
-                    PointF worldOffset = new PointF(
-                        mouseWorldBefore.X - mouseWorldAfter.X,
-                        mouseWorldBefore.Y - mouseWorldAfter.Y
-                    );
-                    
-                    _camera.Position = new PointF(
-                        _camera.Position.X + worldOffset.X * _camera.Zoom,
-                        _camera.Position.Y + worldOffset.Y * _camera.Zoom
-                    );
-                    
-                    Invalidate();
-                }
+                _camera.Position = new PointF(
+                    _camera.Position.X + worldOffset.X * _camera.Zoom,
+                    _camera.Position.Y + worldOffset.Y * _camera.Zoom
+                );
+                
+                Invalidate();
             }
         }
 
@@ -434,14 +476,34 @@ namespace Project9.Editor
                 }
                 else if (_isDraggingPlayer && _mapData.MapData.Player != null)
                 {
-                    _mapData.MapData.Player.X = targetPos.X;
-                    _mapData.MapData.Player.Y = targetPos.Y;
+                    // Player is 128x64 diamond, should overlay 4 grid cells (2x2)
+                    // Calculate player's bottom corner position (where we want to snap)
+                    float playerBottomY = targetPos.Y + 32.0f;
+                    PointF playerBottomCorner = new PointF(targetPos.X, playerBottomY);
+                    
+                    // Find nearest grid intersection point to the player's bottom corner
+                    PointF nearestGridPoint = FindNearestGridPoint(playerBottomCorner);
+                    
+                    // Position player center so its bottom corner aligns with the grid intersection point
+                    // This ensures all 4 corners align with grid points for a 2x2 overlay
+                    _mapData.MapData.Player.X = nearestGridPoint.X;
+                    _mapData.MapData.Player.Y = nearestGridPoint.Y - 32.0f;
                     Invalidate();
                 }
                 else if (_draggedEnemy != null)
                 {
-                    _draggedEnemy.X = targetPos.X;
-                    _draggedEnemy.Y = targetPos.Y;
+                    // Enemies are 128x64 diamonds (same as player), should overlay 4 grid cells (2x2)
+                    // Calculate enemy's bottom corner position (where we want to snap)
+                    float enemyBottomY = targetPos.Y + 32.0f;
+                    PointF enemyBottomCorner = new PointF(targetPos.X, enemyBottomY);
+                    
+                    // Find nearest grid intersection point to the enemy's bottom corner
+                    PointF nearestGridPoint = FindNearestGridPoint(enemyBottomCorner);
+                    
+                    // Position enemy center so its bottom corner aligns with the grid intersection point
+                    // This ensures all 4 corners align with grid points for a 2x2 overlay
+                    _draggedEnemy.X = nearestGridPoint.X;
+                    _draggedEnemy.Y = nearestGridPoint.Y - 32.0f;
                     Invalidate();
                 }
                 else if (_draggedCamera != null)
@@ -583,10 +645,114 @@ namespace Project9.Editor
             }
         }
 
+        private PointF FindNearestGridPoint(PointF position)
+        {
+            const float gridCellWidth = 64.0f;
+            const float gridCellHalfHeight = 16.0f;
+            
+            // Grid cells per tile: 1024/64 = 16 cells
+            const int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridCellWidth);
+            
+            // Find the nearest grid intersection point (corner where grid cell diamonds meet)
+            float minDistance = float.MaxValue;
+            PointF nearestGridPoint = position;
+            
+            // Check nearby tiles
+            var (tileX, tileY) = IsometricMath.ScreenToTile(position.X, position.Y);
+            
+            for (int dtX = -1; dtX <= 1; dtX++)
+            {
+                for (int dtY = -1; dtY <= 1; dtY++)
+                {
+                    var (tileScreenX, tileScreenY) = IsometricMath.TileToScreen(tileX + dtX, tileY + dtY);
+                    
+                    // Calculate all grid intersection points in this tile
+                    // Grid intersection points are the corners of grid cell diamonds
+                    // Each grid cell is 64x32, so intersections occur at regular intervals
+                    for (int gridCellX = 0; gridCellX <= gridCellsPerTile; gridCellX++)
+                    {
+                        for (int gridCellY = 0; gridCellY <= gridCellsPerTile; gridCellY++)
+                        {
+                            // Calculate grid cell center position
+                            float cellProgressX = gridCellX / (float)gridCellsPerTile;
+                            float cellProgressY = gridCellY / (float)gridCellsPerTile;
+                            
+                            // Offset from tile corner to grid cell position
+                            float cellOffsetX = (cellProgressX - cellProgressY) * (IsometricMath.TileWidth / 2.0f);
+                            float cellOffsetY = (cellProgressX + cellProgressY) * (IsometricMath.TileHeight / 2.0f);
+                            
+                            // Now, for each grid cell, its corners are intersection points
+                            // The bottom corner of a grid cell is at (centerX, centerY + halfHeight)
+                            // But we need to think about this differently: intersection points are
+                            // where cell corners meet, which means they're at the cell corners themselves
+                            
+                            // Let's calculate the intersection point as the bottom corner of the grid cell
+                            // that would be centered at this position
+                            // Actually, grid intersection points form a regular pattern
+                            // For a cell centered at (cx, cy), its bottom corner is (cx, cy + 16)
+                            // So if we calculate where cells would be centered and add the offset...
+                            
+                            // Better approach: calculate the intersection point directly
+                            // In isometric space, grid intersections are spaced by grid cell dimensions
+                            // The intersection point at (gridCellX, gridCellY) represents a corner
+                            // Position it as if it's the bottom corner of a cell at this grid position
+                            
+                            // Calculate the position of the intersection point
+                            // This is the corner where grid lines meet
+                            float intersectionX = tileScreenX + cellOffsetX;
+                            float intersectionY = tileScreenY + cellOffsetY + gridCellHalfHeight;
+                            
+                            // However, we need to account for the fact that intersections form a pattern
+                            // Let's try a different approach: calculate where a grid cell's bottom corner
+                            // would be if the cell center is at this grid position
+                            
+                            // Actually, let's think about it this way:
+                            // Grid cells are positioned at their centers
+                            // Grid intersection points are where the corners of these cells meet
+                            // The bottom corner of a cell at center (cx, cy) is at (cx, cy + 16)
+                            // So if we want to find intersection points, we can think of them as
+                            // the corners of cells, which means we need cell centers
+                            
+                            // Calculate grid cell center position using +0.5 offset for center
+                            // Grid cells are positioned at their centers, and we want to find their corner points
+                            float cellCenterProgressX = (gridCellX + 0.5f) / gridCellsPerTile;
+                            float cellCenterProgressY = (gridCellY + 0.5f) / gridCellsPerTile;
+                            
+                            float cellCenterOffsetX = (cellCenterProgressX - cellCenterProgressY) * (IsometricMath.TileWidth / 2.0f);
+                            float cellCenterOffsetY = (cellCenterProgressX + cellCenterProgressY) * (IsometricMath.TileHeight / 2.0f);
+                            
+                            float cellCenterX = tileScreenX + cellCenterOffsetX;
+                            float cellCenterY = tileScreenY + cellCenterOffsetY;
+                            
+                            // The bottom corner of this grid cell is a grid intersection point
+                            // This is where the 128x64 player diamond should align its bottom corner
+                            float gridPointX = cellCenterX;
+                            float gridPointY = cellCenterY + gridCellHalfHeight;
+                            
+                            float distance = (float)Math.Sqrt(Math.Pow(position.X - gridPointX, 2) + Math.Pow(position.Y - gridPointY, 2));
+                            
+                            if (distance < minDistance)
+                            {
+                                minDistance = distance;
+                                nearestGridPoint = new PointF(gridPointX, gridPointY);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return nearestGridPoint;
+        }
+
         private PointF SnapToGrid(PointF position)
         {
+            // Default to 64x32 diamond (halfHeight = 16.0f) for collisions and other entities
+            return SnapToGrid(position, 16.0f);
+        }
+
+        private PointF SnapToGrid(PointF position, float entityHalfHeight)
+        {
             const float gridX = 64.0f;
-            const float halfHeight = 16.0f; // Half height of 64x32 diamond (32/2)
             
             // Grid cells per tile: 1024/64 = 16 cells
             const int gridCellsPerTile = (int)(IsometricMath.TileWidth / gridX);
@@ -620,9 +786,11 @@ namespace Project9.Editor
                             float cellCenterY = tileScreenY + cellOffsetY;
                             
                             // Bottom corner of grid cell is at the bottom point of the diamond
-                            // Bottom point: (centerX, centerY + halfHeight)
+                            // Grid cells are 64x32, so their halfHeight = 16.0f
+                            const float gridHalfHeight = 16.0f;
+                            // Bottom point: (centerX, centerY + gridHalfHeight)
                             float cellBottomX = cellCenterX;
-                            float cellBottomY = cellCenterY + halfHeight;
+                            float cellBottomY = cellCenterY + gridHalfHeight;
                             
                             float distance = (float)Math.Sqrt(Math.Pow(position.X - cellBottomX, 2) + Math.Pow(position.Y - cellBottomY, 2));
                             
@@ -637,10 +805,10 @@ namespace Project9.Editor
             }
             
             // Return position where entity center should be so its bottom point is at the grid cell bottom corner
-            // Entity bottom point is at (centerX, centerY + halfHeight)
-            // We want: entityCenterY + halfHeight = gridCellBottomY
-            // So: entityCenterY = gridCellBottomY - halfHeight
-            return new PointF(nearestCellBottomCorner.X, nearestCellBottomCorner.Y - halfHeight);
+            // Entity bottom point is at (centerX, centerY + entityHalfHeight)
+            // We want: entityCenterY + entityHalfHeight = gridCellBottomY
+            // So: entityCenterY = gridCellBottomY - entityHalfHeight
+            return new PointF(nearestCellBottomCorner.X, nearestCellBottomCorner.Y - entityHalfHeight);
         }
 
         private void MapRenderControl_MouseDown(object? sender, MouseEventArgs e)
@@ -751,6 +919,7 @@ namespace Project9.Editor
                         if (_hoverTileX.HasValue && _hoverTileY.HasValue)
                         {
                             _mapData.SetTile(_hoverTileX.Value, _hoverTileY.Value, _selectedTerrainType);
+                            _tilesDirty = true; // Mark tiles as dirty when modified
                             Invalidate();
                         }
                         else
@@ -761,6 +930,7 @@ namespace Project9.Editor
                             if (tileX >= 0 && tileX < _mapData.Width && tileY >= 0 && tileY < _mapData.Height)
                             {
                                 _mapData.SetTile(tileX, tileY, _selectedTerrainType);
+                                _tilesDirty = true; // Mark tiles as dirty when modified
                                 Invalidate();
                             }
                         }
@@ -977,6 +1147,62 @@ namespace Project9.Editor
             }
         }
 
+        private RectangleF GetViewportBounds(Graphics g)
+        {
+            // Get the visible area in world coordinates
+            // Convert screen bounds to world coordinates
+            PointF topLeft = ScreenToWorld(new Point(0, 0));
+            PointF bottomRight = ScreenToWorld(new Point(this.Width, this.Height));
+            
+            return new RectangleF(
+                Math.Min(topLeft.X, bottomRight.X),
+                Math.Min(topLeft.Y, bottomRight.Y),
+                Math.Abs(bottomRight.X - topLeft.X),
+                Math.Abs(bottomRight.Y - topLeft.Y)
+            );
+        }
+
+        private void RebuildTileCache()
+        {
+            if (_mapData == null) return;
+            
+            _cachedTiles = new List<(int x, int y, TerrainType type)>();
+            for (int x = 0; x < _mapData.Width; x++)
+            {
+                for (int y = 0; y < _mapData.Height; y++)
+                {
+                    var tile = _mapData.GetTile(x, y);
+                    if (tile != null)
+                    {
+                        _cachedTiles.Add((x, y, tile.TerrainType));
+                    }
+                }
+            }
+            _tilesDirty = false;
+        }
+
+        private void RequestInvalidate()
+        {
+            if (!_pendingInvalidate)
+            {
+                _pendingInvalidate = true;
+                // Use BeginInvoke to batch invalidate calls
+                if (this.IsHandleCreated)
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        Invalidate();
+                        _pendingInvalidate = false;
+                    }));
+                }
+                else
+                {
+                    Invalidate();
+                    _pendingInvalidate = false;
+                }
+            }
+        }
+
         private PointF ScreenToWorld(Point screenPoint)
         {
             // Apply inverse camera transform
@@ -997,7 +1223,7 @@ namespace Project9.Editor
             g.InterpolationMode = InterpolationMode.NearestNeighbor;
             g.PixelOffsetMode = PixelOffsetMode.None; // Changed to None for pixel-perfect alignment
             g.CompositingMode = CompositingMode.SourceOver; // Ensure proper alpha blending
-            g.CompositingQuality = CompositingQuality.HighQuality; // High quality alpha blending
+            g.CompositingQuality = CompositingQuality.Default; // Standard quality for better performance (sufficient for pixel art)
 
             // Check if map data is initialized
             if (_mapData == null || _mapData.Width == 0 || _mapData.Height == 0)
@@ -1019,33 +1245,34 @@ namespace Project9.Editor
             Matrix originalTransform = g.Transform;
             g.Transform = _camera.GetTransformMatrix();
 
-            // Get all tiles and sort them for proper rendering order (back to front)
-            var tiles = new List<(int x, int y, TerrainType type)>();
-            for (int x = 0; x < _mapData.Width; x++)
+            // Get cached tile list, rebuild if dirty
+            if (_tilesDirty || _cachedTiles == null)
             {
-                for (int y = 0; y < _mapData.Height; y++)
-                {
-                    var tile = _mapData.GetTile(x, y);
-                    if (tile != null)
-                    {
-                        tiles.Add((x, y, tile.TerrainType));
-                    }
-                }
+                RebuildTileCache();
             }
+            var tiles = _cachedTiles!;
 
-            // Sort by screen Y position to ensure correct depth
-            tiles = tiles.OrderBy(t =>
+            // Calculate viewport bounds for culling (approximate)
+            RectangleF viewportBounds = GetViewportBounds(g);
+            
+            // Filter and sort visible tiles only
+            var visibleSortedTiles = tiles.Where(t =>
             {
                 var (screenX, screenY) = IsometricMath.TileToScreen(t.x, t.y);
-                return screenY;
-            }).ThenBy(t =>
+                // Check if tile is roughly in viewport (with margin for tile size)
+                float margin = IsometricMath.TileWidth;
+                return screenX >= viewportBounds.Left - margin && 
+                       screenX <= viewportBounds.Right + margin &&
+                       screenY >= viewportBounds.Top - margin && 
+                       screenY <= viewportBounds.Bottom + margin;
+            }).OrderBy(t =>
             {
                 var (screenX, screenY) = IsometricMath.TileToScreen(t.x, t.y);
-                return screenX;
+                return screenY + screenX; // Sort by depth (Y + X for isometric)
             }).ToList();
 
             // Draw tiles
-            foreach (var tile in tiles)
+            foreach (var tile in visibleSortedTiles)
             {
                 var (screenX, screenY) = IsometricMath.TileToScreen(tile.x, tile.y);
                 Bitmap? texture = _textureLoader.GetTexture(tile.type);
@@ -1370,9 +1597,9 @@ namespace Project9.Editor
             float centerX = enemy.X;
             float centerY = enemy.Y;
             
-            // Isometric diamond dimensions (scaled down from tile size)
-            float halfWidth = 32.0f;  // Half width of the isometric box
-            float halfHeight = 16.0f; // Half height of the isometric box
+            // Isometric diamond dimensions (128x64)
+            float halfWidth = 64.0f;  // Half width of the isometric box (128/2)
+            float halfHeight = 32.0f; // Half height of the isometric box (64/2)
             
             // Define the 4 points of the isometric diamond
             PointF[] diamondPoints = new PointF[]
@@ -1475,9 +1702,9 @@ namespace Project9.Editor
             float centerX = player.X;
             float centerY = player.Y;
             
-            // Isometric diamond dimensions (64x32, same as enemies)
-            float halfWidth = 32.0f;  // Half width of the isometric box (64/2)
-            float halfHeight = 16.0f; // Half height of the isometric box (32/2)
+            // Isometric diamond dimensions (128x64)
+            float halfWidth = 64.0f;  // Half width of the isometric box (128/2)
+            float halfHeight = 32.0f; // Half height of the isometric box (64/2)
             
             // Define the 4 points of the isometric diamond
             PointF[] diamondPoints = new PointF[]

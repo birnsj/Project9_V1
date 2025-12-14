@@ -31,4 +31,13 @@
     <ProjectReference Include=".\Project9.Shared\Project9.Shared.csproj" />
   </ItemGroup>
 
+  <Target Name="CopyContent" AfterTargets="Build">
+    <ItemGroup>
+      <ContentFiles Include="Content\bin\DesktopGL\Content\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ContentFiles)" 
+          DestinationFiles="@(ContentFiles->'$(OutputPath)Content\%(RecursiveDir)%(Filename)%(Extension)')" 
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

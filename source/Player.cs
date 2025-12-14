@@ -1063,7 +1063,7 @@ namespace Project9
 
             if (visible && _diamondTexture != null)
             {
-                Vector2 drawPosition = _position - new Vector2(32, 16);
+                Vector2 drawPosition = _position - new Vector2(64, 32); // Offset for 128x64 diamond
                 Color drawColor = _isSneaking ? _sneakColor : _normalColor;
                 
                 // Apply pulsing effect for dead player

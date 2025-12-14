@@ -36,19 +36,8 @@ namespace Project9.Editor
                 {
                     try
                     {
-                        // Load image preserving alpha channel for transparency support
-                        using (Image originalImage = Image.FromFile(resolvedPath))
-                        {
-                            // Create bitmap with 32-bit ARGB format to preserve alpha channel
-                            Bitmap bitmap = new Bitmap(originalImage.Width, originalImage.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                            using (Graphics g = Graphics.FromImage(bitmap))
-                            {
-                                g.Clear(Color.Transparent); // Clear with transparent background
-                                g.DrawImage(originalImage, 0, 0); // Draw the original image (preserves alpha)
-                            }
-                            _textures[terrainType] = bitmap;
-                            Console.WriteLine($"[TileTextureLoader] Loaded {terrainType} from {resolvedPath} (Format: {bitmap.PixelFormat})");
-                        }
+                        _textures[terrainType] = new Bitmap(resolvedPath);
+                        Console.WriteLine($"[TileTextureLoader] Loaded {terrainType} from {resolvedPath}");
                     }
                     catch (Exception ex)
                     {

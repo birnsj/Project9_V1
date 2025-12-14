@@ -349,7 +349,7 @@ namespace Project9
 
             if (visible && _diamondTexture != null)
             {
-                Vector2 drawPosition = _position - new Vector2(32, 16);
+                Vector2 drawPosition = _position - new Vector2(64, 32); // Offset for 128x64 diamond
                 // Use blue color for camera, red tint if detected player
                 Color drawColor = _cameraHasDetectedPlayer ? Color.Red : Color.Blue;
                 spriteBatch.Draw(_diamondTexture, drawPosition, drawColor);

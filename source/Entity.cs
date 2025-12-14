@@ -137,8 +137,8 @@ namespace Project9
         /// </summary>
         protected void CreateDiamondTexture(GraphicsDevice graphicsDevice)
         {
-            int halfWidth = 32;
-            int halfHeight = 16;
+            int halfWidth = 64;  // 128x64 diamond to match editor
+            int halfHeight = 32; // 128x64 diamond to match editor
             int width = halfWidth * 2;
             int height = halfHeight * 2;
             
@@ -292,7 +292,7 @@ namespace Project9
 
             if (visible && _diamondTexture != null)
             {
-                Vector2 drawPosition = _position - new Vector2(32, 16);
+                Vector2 drawPosition = _position - new Vector2(64, 32); // Offset for 128x64 diamond
                 spriteBatch.Draw(_diamondTexture, drawPosition, _color);
             }
         }
