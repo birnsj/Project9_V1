@@ -2028,7 +2028,8 @@
       "zHeight": 0,
       "boundingBoxColorR": 0,
       "boundingBoxColorG": 255,
-      "boundingBoxColorB": 255
+      "boundingBoxColorB": 255,
+      "boundingBoxOpacity": 0.3
     },
     {
       "name": "",
@@ -2054,7 +2055,8 @@
       "zHeight": 128,
       "boundingBoxColorR": 0,
       "boundingBoxColorG": 255,
-      "boundingBoxColorB": 255
+      "boundingBoxColorB": 255,
+      "boundingBoxOpacity": 0.3
     },
     {
       "name": "",
@@ -2080,12 +2082,13 @@
       "zHeight": 256,
       "boundingBoxColorR": 0,
       "boundingBoxColorG": 255,
-      "boundingBoxColorB": 255
+      "boundingBoxColorB": 255,
+      "boundingBoxOpacity": 0.3
     },
     {
       "name": "Dave",
-      "x": -576,
-      "y": 4352,
+      "x": -704,
+      "y": 4224,
       "attackRange": 50,
       "detectionRange": 200,
       "attackCooldown": 1,
@@ -2106,12 +2109,13 @@
       "zHeight": 128,
       "boundingBoxColorR": 0,
       "boundingBoxColorG": 255,
-      "boundingBoxColorB": 255
+      "boundingBoxColorB": 255,
+      "boundingBoxOpacity": 0.3
     },
     {
       "name": "",
-      "x": -64,
-      "y": 4640,
+      "x": 352,
+      "y": 4848,
       "attackRange": 50,
       "detectionRange": 200,
       "attackCooldown": 1,
@@ -2132,7 +2136,8 @@
       "zHeight": 256,
       "boundingBoxColorR": 69,
       "boundingBoxColorG": 224,
-      "boundingBoxColorB": 31
+      "boundingBoxColorB": 31,
+      "boundingBoxOpacity": 0.3
     }
   ],
   "cameras": [
@@ -2144,8 +2149,8 @@
       "alertCooldown": 2,
       "cameraSightConeLength": -1,
       "name": "wdwd",
-      "x": -320,
-      "y": 4384,
+      "x": -800,
+      "y": 4336,
       "attackRange": 50,
       "detectionRange": 400,
       "attackCooldown": 1,
@@ -2166,7 +2171,8 @@
       "zHeight": 128,
       "boundingBoxColorR": 0,
       "boundingBoxColorG": 255,
-      "boundingBoxColorB": 255
+      "boundingBoxColorB": 255,
+      "boundingBoxOpacity": 0.3
     },
     {
       "sweepAngle": 90,
@@ -2198,7 +2204,8 @@
       "zHeight": 128,
       "boundingBoxColorR": 0,
       "boundingBoxColorG": 255,
-      "boundingBoxColorB": 255
+      "boundingBoxColorB": 255,
+      "boundingBoxOpacity": 0.3
     },
     {
       "sweepAngle": 90,
@@ -2208,8 +2215,8 @@
       "alertCooldown": 2,
       "cameraSightConeLength": -1,
       "name": "",
-      "x": -512,
-      "y": 4544,
+      "x": -864,
+      "y": 4720,
       "attackRange": 50,
       "detectionRange": 400,
       "attackCooldown": 1,
@@ -2230,7 +2237,8 @@
       "zHeight": 64,
       "boundingBoxColorR": 128,
       "boundingBoxColorG": 128,
-      "boundingBoxColorB": 192
+      "boundingBoxColorB": 192,
+      "boundingBoxOpacity": 0.3
     },
     {
       "sweepAngle": 90,
@@ -2262,7 +2270,8 @@
       "zHeight": 64,
       "boundingBoxColorR": 0,
       "boundingBoxColorG": 255,
-      "boundingBoxColorB": 255
+      "boundingBoxColorB": 255,
+      "boundingBoxOpacity": 0.3
     },
     {
       "sweepAngle": 90,
@@ -2294,7 +2303,8 @@
       "zHeight": 0,
       "boundingBoxColorR": 0,
       "boundingBoxColorG": 255,
-      "boundingBoxColorB": 255
+      "boundingBoxColorB": 255,
+      "boundingBoxOpacity": 0.3
     }
   ],
   "weapons": [
@@ -2325,8 +2335,8 @@
   ],
   "player": {
     "name": "Jeff",
-    "x": -320,
-    "y": 4544,
+    "x": -224,
+    "y": 4720,
     "walkSpeed": 75,
     "runSpeed": 150,
     "maxHealth": 100,
@@ -2344,6 +2354,7 @@
     "zHeight": 256,
     "boundingBoxColorR": 255,
     "boundingBoxColorG": 255,
-    "boundingBoxColorB": 0
+    "boundingBoxColorB": 0,
+    "boundingBoxOpacity": 0.3
   }
 }

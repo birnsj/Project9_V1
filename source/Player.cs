@@ -136,7 +136,7 @@ namespace Project9
                 // Dispose old texture and recreate with new dimensions
                 _diamondTexture.Dispose();
                 _diamondTexture = null;
-                InitializeTextures(null); // Recreate diamond texture with new dimensions
+                // Texture will be recreated in Draw() method when needed
             }
         }
         
