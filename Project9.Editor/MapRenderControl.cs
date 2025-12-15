@@ -1398,6 +1398,20 @@ namespace Project9.Editor
             float worldY = (screenPoint.Y + _camera.Position.Y) / _camera.Zoom;
             return new PointF(worldX, worldY);
         }
+        
+        /// <summary>
+        /// Calculate isometric depth for sorting entities (back to front)
+        /// Higher depth value = further back, should be drawn first
+        /// Uses Y position (higher Y = further back) plus X position for tie-breaking
+        /// Z height is subtracted so higher objects appear in front
+        /// </summary>
+        private float CalculateIsometricDepth(float x, float y, float zHeight)
+        {
+            // In isometric view, objects further back have higher Y values
+            // We also consider X position for tie-breaking (objects to the right appear slightly in front)
+            // Z height is subtracted so objects at higher elevations appear in front
+            return y + x * 0.001f - zHeight * 0.5f;
+        }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -1551,38 +1565,85 @@ namespace Project9.Editor
                 DrawHoverPreview(g);
             }
 
-            // Draw enemies
+            // Collect all entities for isometric depth sorting
+            var entitiesToDraw = new List<(object entity, float depth, string type, int index)>();
+            
+            // Add enemies
             for (int i = 0; i < _mapData.MapData.Enemies.Count; i++)
             {
                 var enemy = _mapData.MapData.Enemies[i];
-                DrawEnemy(g, enemy, enemy == _draggedEnemy, i);
+                float depth = CalculateIsometricDepth(enemy.X, enemy.Y, enemy.ZHeight);
+                entitiesToDraw.Add((enemy, depth, "enemy", i));
             }
-
-            // Draw player
+            
+            // Add player
             if (_mapData.MapData.Player != null)
             {
-                DrawPlayer(g, _mapData.MapData.Player, _isDraggingPlayer);
+                float depth = CalculateIsometricDepth(_mapData.MapData.Player.X, _mapData.MapData.Player.Y, _mapData.MapData.Player.ZHeight);
+                entitiesToDraw.Add((_mapData.MapData.Player, depth, "player", 0));
             }
             else
             {
                 // Debug: log if player is null
                 Console.WriteLine("[MapRenderControl] Player is null, not drawing");
             }
-
-            // Draw cameras
+            
+            // Add cameras
             for (int i = 0; i < _mapData.MapData.Cameras.Count; i++)
             {
                 var camera = _mapData.MapData.Cameras[i];
-                DrawCamera(g, camera, camera == _draggedCamera, i);
+                float depth = CalculateIsometricDepth(camera.X, camera.Y, camera.ZHeight);
+                entitiesToDraw.Add((camera, depth, "camera", i));
             }
-
-            // Draw weapons
+            
+            // Add weapons
             if (_mapData.MapData.Weapons != null)
             {
                 for (int i = 0; i < _mapData.MapData.Weapons.Count; i++)
                 {
                     var weapon = _mapData.MapData.Weapons[i];
-                    DrawWeapon(g, weapon, weapon == _draggedWeapon, i);
+                    float depth = CalculateIsometricDepth(weapon.X, weapon.Y, weapon.ZHeight);
+                    entitiesToDraw.Add((weapon, depth, "weapon", i));
+                }
+            }
+            
+            // Sort by isometric depth (back to front)
+            entitiesToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
+            
+            // Draw entities in sorted order
+            foreach (var (entity, depth, type, index) in entitiesToDraw)
+            {
+                if (type == "enemy")
+                {
+                    var enemy = entity as Project9.Shared.EnemyData;
+                    if (enemy != null)
+                    {
+                        DrawEnemy(g, enemy, enemy == _draggedEnemy, index);
+                    }
+                }
+                else if (type == "player")
+                {
+                    var player = entity as Project9.Shared.PlayerData;
+                    if (player != null)
+                    {
+                        DrawPlayer(g, player, _isDraggingPlayer);
+                    }
+                }
+                else if (type == "camera")
+                {
+                    var camera = entity as Project9.Shared.CameraData;
+                    if (camera != null)
+                    {
+                        DrawCamera(g, camera, camera == _draggedCamera, index);
+                    }
+                }
+                else if (type == "weapon")
+                {
+                    var weapon = entity as Project9.Shared.WeaponData;
+                    if (weapon != null)
+                    {
+                        DrawWeapon(g, weapon, weapon == _draggedWeapon, index);
+                    }
                 }
             }
 

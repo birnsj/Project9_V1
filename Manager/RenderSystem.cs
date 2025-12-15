@@ -188,120 +188,185 @@ namespace Project9
             float minY = screenTopLeft.Y - margin;
             float maxY = screenBottomRight.Y + margin;
 
-            // Draw cameras (before enemies so they appear behind)
+            // Collect all entities for isometric depth sorting
+            var entitiesToDraw = new List<(Entity entity, float depth, string type)>();
+            
+            // Add cameras
             foreach (var camera in entityManager.Cameras)
             {
-                // Frustum culling for cameras
                 if (camera.Position.X + 100 >= minX && camera.Position.X - 100 <= maxX &&
                     camera.Position.Y + 100 >= minY && camera.Position.Y - 100 <= maxY)
                 {
-                    // Set bounding box visibility based on toggle
-                    camera.ShowBoundingBox = _showBoundingBoxes;
-                    
-                    // Only draw sight cone if camera is alive
-                    if (camera.IsAlive)
-                    {
-                        camera.DrawSightCone(_spriteBatch);
-                    }
-                    camera.Draw(_spriteBatch);
-                    
-                    // Draw health bar if camera has been damaged (health < maxHealth)
-                    if (camera.IsAlive && camera.CurrentHealth < camera.MaxHealth)
-                    {
-                        DrawEnemyHealthBar(_spriteBatch, camera);
-                    }
-                    
-                    _lastDrawCallCount += 2; // Sight cone, sprite
+                    float depth = CalculateIsometricDepth(camera.Position, camera.ZHeight);
+                    entitiesToDraw.Add((camera, depth, "camera"));
                 }
-            }
-
-            // Draw enemies with frustum culling
-            foreach (var enemy in entityManager.Enemies)
-            {
-                // Quick AABB culling check - skip enemies outside viewport
-                if (enemy.Position.X + 50 < minX || enemy.Position.X - 50 > maxX ||
-                    enemy.Position.Y + 50 < minY || enemy.Position.Y - 50 > maxY)
-                {
-                    continue; // Skip drawing this enemy
-                }
-                
-                // Draw blood splat under dead enemies first (so it appears below)
-                if (enemy.IsDead)
-                {
-                    DrawBloodSplat(_spriteBatch, enemy.Position);
-                }
-                
-                // Skip drawing aggro/sight cone for dead enemies
-                if (!enemy.IsAlive && !enemy.IsDead)
-                    continue;
-                
-                // Set bounding box visibility based on toggle
-                enemy.ShowBoundingBox = _showBoundingBoxes;
-                
-                if (!enemy.IsDead)
-                {
-                    float effectiveRange = enemy.HasDetectedPlayer 
-                        ? enemy.DetectionRange 
-                        : (entityManager.Player.IsSneaking ? enemy.DetectionRange * 0.5f : enemy.DetectionRange);
-                        
-                    enemy.DrawAggroRadius(_spriteBatch, effectiveRange);
-                    enemy.DrawSightCone(_spriteBatch);
-                    
-                    // Draw collision sphere if enabled
-                    if (_showCollisionSpheres)
-                    {
-                        enemy.DrawCollisionSphere(_spriteBatch);
-                    }
-                    
-                    // Draw direction indicator
-                    enemy.DrawDirectionIndicator(_spriteBatch, enemy.Rotation);
-                }
-                
-                // Always draw enemy sprite (alive or dead with pulse)
-                enemy.Draw(_spriteBatch);
-                
-                // Draw health bar above enemy (only if alive and player is within detection range)
-                if (enemy.IsAlive)
-                {
-                    float distanceSquared = Vector2.DistanceSquared(entityManager.Player.Position, enemy.Position);
-                    float effectiveDetectionRange = enemy.HasDetectedPlayer 
-                        ? enemy.DetectionRange 
-                        : (entityManager.Player.IsSneaking ? enemy.DetectionRange * GameConfig.EnemySneakDetectionMultiplier : enemy.DetectionRange);
-                    float effectiveRangeSquared = effectiveDetectionRange * effectiveDetectionRange;
-                    
-                    // Only show health bar if player is within detection range
-                    if (distanceSquared <= effectiveRangeSquared)
-                    {
-                        DrawEnemyHealthBar(_spriteBatch, enemy);
-                    }
-                }
-                
-                int drawCount = enemy.IsDead ? 2 : (_showCollisionSpheres ? 6 : 5); // Blood splat + sprite for dead, full set for alive
-                _lastDrawCallCount += drawCount;
-            }
-
-            // Draw blood splat under dead player first (so it appears below)
-            if (entityManager.Player.IsDead)
-            {
-                DrawBloodSplat(_spriteBatch, entityManager.Player.Position);
             }
             
-            // Draw weapon pickups (before player so they appear below)
+            // Add enemies
+            foreach (var enemy in entityManager.Enemies)
+            {
+                if (enemy.Position.X + 50 >= minX && enemy.Position.X - 50 <= maxX &&
+                    enemy.Position.Y + 50 >= minY && enemy.Position.Y - 50 <= maxY)
+                {
+                    float depth = CalculateIsometricDepth(enemy.Position, enemy.ZHeight);
+                    entitiesToDraw.Add((enemy, depth, "enemy"));
+                }
+            }
+            
+            // Add weapon pickups
             foreach (var weaponPickup in entityManager.WeaponPickups)
             {
-                if (!weaponPickup.IsPickedUp)
+                if (!weaponPickup.IsPickedUp &&
+                    weaponPickup.Position.X + 30 >= minX && weaponPickup.Position.X - 30 <= maxX &&
+                    weaponPickup.Position.Y + 30 >= minY && weaponPickup.Position.Y - 30 <= maxY)
                 {
-                    // Frustum culling for weapons
-                    if (weaponPickup.Position.X + 30 >= minX && weaponPickup.Position.X - 30 <= maxX &&
-                        weaponPickup.Position.Y + 30 >= minY && weaponPickup.Position.Y - 30 <= maxY)
+                    float depth = CalculateIsometricDepth(weaponPickup.Position, weaponPickup.ZHeight);
+                    entitiesToDraw.Add((weaponPickup, depth, "weapon"));
+                }
+            }
+            
+            // Add player
+            float playerDepth = CalculateIsometricDepth(entityManager.Player.Position, entityManager.Player.ZHeight);
+            entitiesToDraw.Add((entityManager.Player, playerDepth, "player"));
+            
+            // Sort by isometric depth (back to front)
+            entitiesToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
+            
+            // Draw entities in sorted order
+            foreach (var (entity, depth, type) in entitiesToDraw)
+            {
+                // Set bounding box visibility based on toggle
+                entity.ShowBoundingBox = _showBoundingBoxes;
+                
+                if (type == "camera")
+                {
+                    var camera = entity as SecurityCamera;
+                    if (camera != null)
+                    {
+                        // Only draw sight cone if camera is alive
+                        if (camera.IsAlive)
+                        {
+                            camera.DrawSightCone(_spriteBatch);
+                        }
+                        camera.Draw(_spriteBatch);
+                        
+                        // Draw health bar if camera has been damaged (health < maxHealth)
+                        if (camera.IsAlive && camera.CurrentHealth < camera.MaxHealth)
+                        {
+                            DrawEnemyHealthBar(_spriteBatch, camera);
+                        }
+                        
+                        _lastDrawCallCount += 2; // Sight cone, sprite
+                    }
+                }
+                else if (type == "enemy")
+                {
+                    var enemy = entity as Enemy;
+                    if (enemy != null)
+                    {
+                        // Draw blood splat under dead enemies first (so it appears below)
+                        if (enemy.IsDead)
+                        {
+                            DrawBloodSplat(_spriteBatch, enemy.Position);
+                        }
+                        
+                        // Skip drawing aggro/sight cone for dead enemies
+                        if (!enemy.IsAlive && !enemy.IsDead)
+                            continue;
+                        
+                        if (!enemy.IsDead)
+                        {
+                            float effectiveRange = enemy.HasDetectedPlayer 
+                                ? enemy.DetectionRange 
+                                : (entityManager.Player.IsSneaking ? enemy.DetectionRange * 0.5f : enemy.DetectionRange);
+                                
+                            enemy.DrawAggroRadius(_spriteBatch, effectiveRange);
+                            enemy.DrawSightCone(_spriteBatch);
+                            
+                            // Draw collision sphere if enabled
+                            if (_showCollisionSpheres)
+                            {
+                                enemy.DrawCollisionSphere(_spriteBatch);
+                            }
+                            
+                            // Draw direction indicator
+                            enemy.DrawDirectionIndicator(_spriteBatch, enemy.Rotation);
+                        }
+                        
+                        // Always draw enemy sprite (alive or dead with pulse)
+                        enemy.Draw(_spriteBatch);
+                        
+                        // Draw health bar above enemy (only if alive and player is within detection range)
+                        if (enemy.IsAlive)
+                        {
+                            float distanceSquared = Vector2.DistanceSquared(entityManager.Player.Position, enemy.Position);
+                            float effectiveDetectionRange = enemy.HasDetectedPlayer 
+                                ? enemy.DetectionRange 
+                                : (entityManager.Player.IsSneaking ? enemy.DetectionRange * GameConfig.EnemySneakDetectionMultiplier : enemy.DetectionRange);
+                            float effectiveRangeSquared = effectiveDetectionRange * effectiveDetectionRange;
+                            
+                            // Only show health bar if player is within detection range
+                            if (distanceSquared <= effectiveRangeSquared)
+                            {
+                                DrawEnemyHealthBar(_spriteBatch, enemy);
+                            }
+                        }
+                        
+                        int drawCount = enemy.IsDead ? 2 : (_showCollisionSpheres ? 6 : 5); // Blood splat + sprite for dead, full set for alive
+                        _lastDrawCallCount += drawCount;
+                    }
+                }
+                else if (type == "weapon")
+                {
+                    var weaponPickup = entity as WeaponPickup;
+                    if (weaponPickup != null)
                     {
                         weaponPickup.Draw(_spriteBatch);
                         _lastDrawCallCount++;
                     }
                 }
+                else if (type == "player")
+                {
+                    var player = entity as Player;
+                    if (player != null)
+                    {
+                        // Draw blood splat under dead player first (so it appears below)
+                        if (player.IsDead)
+                        {
+                            DrawBloodSplat(_spriteBatch, player.Position);
+                        }
+                        
+                        if (!player.IsDead && _showCollisionSpheres)
+                        {
+                            player.DrawCollisionSphere(_spriteBatch);
+                        }
+                        player.Draw(_spriteBatch);
+                        
+                        // Draw direction indicator (only if alive)
+                        if (!player.IsDead)
+                        {
+                            player.DrawDirectionIndicator(_spriteBatch, player.Rotation);
+                        }
+                        
+                        // Draw equipped weapon after direction indicator so it's on top (only if alive and has weapon)
+                        if (!player.IsDead && player.EquippedWeapon != null)
+                        {
+                            DrawPlayerWeapon(_spriteBatch, player);
+                            
+                            // Draw range indicator for gun
+                            if (player.EquippedWeapon is Gun)
+                            {
+                                DrawPistolRange(_spriteBatch, player);
+                            }
+                        }
+                        
+                        int playerDrawCount = player.IsDead ? 2 : (_showCollisionSpheres ? 3 : 2); // Blood splat + sprite for dead, full set for alive
+                        _lastDrawCallCount += playerDrawCount;
+                    }
+                }
             }
             
-            // Draw projectiles
+            // Draw projectiles (always on top, no depth sorting needed)
             foreach (var projectile in entityManager.Projectiles)
             {
                 if (!projectile.IsExpired)
@@ -315,37 +380,6 @@ namespace Project9
                     }
                 }
             }
-
-            // Draw player
-            // Set bounding box visibility based on toggle
-            entityManager.Player.ShowBoundingBox = _showBoundingBoxes;
-            
-            if (!entityManager.Player.IsDead && _showCollisionSpheres)
-            {
-                entityManager.Player.DrawCollisionSphere(_spriteBatch);
-            }
-            entityManager.Player.Draw(_spriteBatch);
-            
-            // Draw direction indicator (only if alive)
-            if (!entityManager.Player.IsDead)
-            {
-                entityManager.Player.DrawDirectionIndicator(_spriteBatch, entityManager.Player.Rotation);
-            }
-            
-            // Draw equipped weapon after direction indicator so it's on top (only if alive and has weapon)
-            if (!entityManager.Player.IsDead && entityManager.Player.EquippedWeapon != null)
-            {
-                DrawPlayerWeapon(_spriteBatch, entityManager.Player);
-                
-                // Draw range indicator for gun
-                if (entityManager.Player.EquippedWeapon is Gun)
-                {
-                    DrawPistolRange(_spriteBatch, entityManager.Player);
-                }
-            }
-            
-            int playerDrawCount = entityManager.Player.IsDead ? 2 : (_showCollisionSpheres ? 3 : 2); // Blood splat + sprite for dead, full set for alive
-            _lastDrawCallCount += playerDrawCount;
             
             // Draw debug path for player (only if not dragging/following cursor and path debug is enabled)
             if (_showPath && !entityManager.IsFollowingCursor)
@@ -587,6 +621,20 @@ namespace Project9
         private Vector2 ScreenToWorld(Vector2 screenPosition)
         {
             return screenPosition / _camera.Zoom + _camera.Position;
+        }
+        
+        /// <summary>
+        /// Calculate isometric depth for sorting entities (back to front)
+        /// Higher depth value = further back, should be drawn first
+        /// Uses Y position (higher Y = further back) plus X position for tie-breaking
+        /// Z height is subtracted so higher objects appear in front
+        /// </summary>
+        private float CalculateIsometricDepth(Vector2 position, float zHeight)
+        {
+            // In isometric view, objects further back have higher Y values
+            // We also consider X position for tie-breaking (objects to the right appear slightly in front)
+            // Z height is subtracted so objects at higher elevations appear in front
+            return position.Y + position.X * 0.001f - zHeight * 0.5f;
         }
 
         private void DrawDebugPath(SpriteBatch spriteBatch, Player player)
