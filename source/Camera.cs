@@ -353,8 +353,8 @@ namespace Project9
             if (visible && _diamondTexture != null)
             {
                 Vector2 drawPosition = _position - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
-                // Use blue color for camera, red tint if detected player
-                Color drawColor = _cameraHasDetectedPlayer ? Color.Red : Color.Blue;
+                // Use bounding box color for the diamond sprite to match the bounding box
+                Color drawColor = _boundingBoxColor;
                 // Use lower layerDepth (0.1) so entity sprite draws behind bounding box
                 spriteBatch.Draw(_diamondTexture, drawPosition, null, drawColor, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0.1f);
             }

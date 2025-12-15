@@ -2025,7 +2025,10 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 0
+      "zHeight": 0,
+      "boundingBoxColorR": 0,
+      "boundingBoxColorG": 255,
+      "boundingBoxColorB": 255
     },
     {
       "name": "",
@@ -2048,7 +2051,10 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 128
+      "zHeight": 128,
+      "boundingBoxColorR": 0,
+      "boundingBoxColorG": 255,
+      "boundingBoxColorB": 255
     },
     {
       "name": "",
@@ -2071,7 +2077,10 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 256
+      "zHeight": 256,
+      "boundingBoxColorR": 0,
+      "boundingBoxColorG": 255,
+      "boundingBoxColorB": 255
     },
     {
       "name": "Dave",
@@ -2094,7 +2103,10 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 128
+      "zHeight": 128,
+      "boundingBoxColorR": 0,
+      "boundingBoxColorG": 255,
+      "boundingBoxColorB": 255
     },
     {
       "name": "",
@@ -2117,7 +2129,10 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 256
+      "zHeight": 256,
+      "boundingBoxColorR": 69,
+      "boundingBoxColorG": 224,
+      "boundingBoxColorB": 31
     }
   ],
   "cameras": [
@@ -2148,7 +2163,10 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 128
+      "zHeight": 128,
+      "boundingBoxColorR": 0,
+      "boundingBoxColorG": 255,
+      "boundingBoxColorB": 255
     },
     {
       "sweepAngle": 90,
@@ -2177,7 +2195,10 @@
       "rotation": 2.094,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 128
+      "zHeight": 128,
+      "boundingBoxColorR": 0,
+      "boundingBoxColorG": 255,
+      "boundingBoxColorB": 255
     },
     {
       "sweepAngle": 90,
@@ -2206,7 +2227,10 @@
       "rotation": 4.189,
       "diamondWidth": 64,
       "diamondHeight": 32,
-      "zHeight": 64
+      "zHeight": 64,
+      "boundingBoxColorR": 128,
+      "boundingBoxColorG": 128,
+      "boundingBoxColorB": 192
     },
     {
       "sweepAngle": 90,
@@ -2235,7 +2259,10 @@
       "rotation": 1.047,
       "diamondWidth": 64,
       "diamondHeight": 32,
-      "zHeight": 64
+      "zHeight": 64,
+      "boundingBoxColorR": 0,
+      "boundingBoxColorG": 255,
+      "boundingBoxColorB": 255
     },
     {
       "sweepAngle": 90,
@@ -2264,7 +2291,10 @@
       "rotation": 5.236,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 0
+      "zHeight": 0,
+      "boundingBoxColorR": 0,
+      "boundingBoxColorG": 255,
+      "boundingBoxColorB": 255
     }
   ],
   "weapons": [
@@ -2311,6 +2341,9 @@
     "rotation": 0,
     "diamondWidth": 128,
     "diamondHeight": 64,
-    "zHeight": 256
+    "zHeight": 256,
+    "boundingBoxColorR": 255,
+    "boundingBoxColorG": 255,
+    "boundingBoxColorB": 0
   }
 }

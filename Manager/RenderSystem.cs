@@ -71,7 +71,7 @@ namespace Project9
             get => _showBoundingBoxes;
             set => _showBoundingBoxes = value;
         }
-
+        
         public int LastDrawCallCount => _lastDrawCallCount;
 
         public RenderSystem(GraphicsDevice graphicsDevice, SpriteBatch spriteBatch, IsometricMap map, ViewportCamera camera, SpriteFont? uiFont)

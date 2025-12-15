@@ -1640,14 +1640,14 @@ namespace Project9.Editor
         /// Entities are drawn at their world X, Y coordinates directly
         /// We use isometric projection to convert 3D bounding box to screen space
         /// </summary>
-        private void DrawBoundingBox3D(Graphics g, float centerX, float centerY, float zHeight, float width, float height, float depth)
+        private void DrawBoundingBox3D(Graphics g, float centerX, float centerY, float zHeight, float width, float height, float depth, Color boxColor)
         {
             float halfWidth = width / 2.0f;
             float halfHeight = height / 2.0f;
             
             // Calculate opacity for filled faces (used in both 2D and 3D cases)
             int alpha = (int)(_boundingBoxOpacity * 255.0f);
-            Color fillColor = Color.FromArgb(alpha, Color.Cyan);
+            Color fillColor = Color.FromArgb(alpha, boxColor);
             
             // ZHeight represents the TOP of the object
             // Base is always at z = 0, top is at z = zHeight
@@ -1672,7 +1672,7 @@ namespace Project9.Editor
                 }
                 
                 // Draw outline
-                using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
+                using (Pen boxPen = new Pen(boxColor, 2.0f))
                 {
                     g.DrawPolygon(boxPen, diamondPoints);
                 }
@@ -1725,8 +1725,8 @@ namespace Project9.Editor
                 g.FillPolygon(fillBrush, sideFace4);
             }
             
-            // Draw wireframe outline using bright cyan color with thicker lines
-            using (Pen boxPen = new Pen(Color.Cyan, 3.0f))
+            // Draw wireframe outline using entity's bounding box color with thicker lines
+            using (Pen boxPen = new Pen(boxColor, 3.0f))
             {
                 // Bottom face (isometric diamond at z=0)
                 g.DrawLine(boxPen, bottomTop, bottomRight);
@@ -2326,8 +2326,11 @@ namespace Project9.Editor
                 new PointF(centerX - halfWidth, centerY)                      // Left
             };
             
-            // Draw filled isometric diamond
-            using (SolidBrush brush = new SolidBrush(isDragging ? Color.Orange : Color.DarkRed))
+            // Get bounding box color from enemy data
+            Color boxColor = Color.FromArgb(enemy.BoundingBoxColorR, enemy.BoundingBoxColorG, enemy.BoundingBoxColorB);
+            
+            // Draw filled isometric diamond - use bounding box color (or orange when dragging)
+            using (SolidBrush brush = new SolidBrush(isDragging ? Color.Orange : boxColor))
             {
                 g.FillPolygon(brush, diamondPoints);
             }
@@ -2341,7 +2344,7 @@ namespace Project9.Editor
             // Draw bounding box if enabled
             if (_showBoundingBoxes)
             {
-                DrawBoundingBox3D(g, centerX, centerY, enemy.ZHeight, enemy.DiamondWidth, enemy.DiamondHeight, 64.0f);
+                DrawBoundingBox3D(g, centerX, centerY, enemy.ZHeight, enemy.DiamondWidth, enemy.DiamondHeight, 64.0f, boxColor);
             }
             
             // Draw sight cone preview - only if ShowEnemyCones is enabled
@@ -2437,8 +2440,11 @@ namespace Project9.Editor
                 new PointF(centerX - halfWidth, centerY)                      // Left
             };
             
-            // Draw filled isometric diamond
-            using (SolidBrush brush = new SolidBrush(isDragging ? Color.Yellow : Color.Red))
+            // Get bounding box color from player data
+            Color boxColor = Color.FromArgb(player.BoundingBoxColorR, player.BoundingBoxColorG, player.BoundingBoxColorB);
+            
+            // Draw filled isometric diamond - use bounding box color (or yellow when dragging)
+            using (SolidBrush brush = new SolidBrush(isDragging ? Color.Yellow : boxColor))
             {
                 g.FillPolygon(brush, diamondPoints);
             }
@@ -2452,7 +2458,7 @@ namespace Project9.Editor
             // Draw bounding box if enabled
             if (_showBoundingBoxes)
             {
-                DrawBoundingBox3D(g, centerX, centerY, player.ZHeight, player.DiamondWidth, player.DiamondHeight, 64.0f);
+                DrawBoundingBox3D(g, centerX, centerY, player.ZHeight, player.DiamondWidth, player.DiamondHeight, 64.0f, boxColor);
             }
             
             // Draw label above the player - use name from JSON if available
@@ -2528,7 +2534,8 @@ namespace Project9.Editor
             // Draw bounding box if enabled
             if (_showBoundingBoxes)
             {
-                DrawBoundingBox3D(g, centerX, centerY, weapon.ZHeight, 24.0f, 12.0f, 24.0f);
+                Color boxColor = Color.FromArgb(weapon.BoundingBoxColorR, weapon.BoundingBoxColorG, weapon.BoundingBoxColorB);
+                DrawBoundingBox3D(g, centerX, centerY, weapon.ZHeight, 24.0f, 12.0f, 24.0f, boxColor);
             }
             
             // Draw label above the weapon
@@ -2588,7 +2595,8 @@ namespace Project9.Editor
             // Draw bounding box if enabled
             if (_showBoundingBoxes)
             {
-                DrawBoundingBox3D(g, centerX, centerY, camera.ZHeight, camera.DiamondWidth, camera.DiamondHeight, 64.0f);
+                Color boxColor = Color.FromArgb(camera.BoundingBoxColorR, camera.BoundingBoxColorG, camera.BoundingBoxColorB);
+                DrawBoundingBox3D(g, centerX, centerY, camera.ZHeight, camera.DiamondWidth, camera.DiamondHeight, 64.0f, boxColor);
             }
             
             // Draw sight cone preview - only if ShowCameraCones is enabled

@@ -87,6 +87,18 @@ namespace Project9
             // Set Z height from PlayerData
             ZHeight = playerData?.ZHeight ?? 0.0f;
             
+            // Set bounding box color from PlayerData (default to cyan)
+            if (playerData != null)
+            {
+                BoundingBoxColor = new Color((byte)playerData.BoundingBoxColorR, (byte)playerData.BoundingBoxColorG, (byte)playerData.BoundingBoxColorB, (byte)255);
+                BoundingBoxOpacity = playerData.BoundingBoxOpacity;
+            }
+            else
+            {
+                BoundingBoxColor = Color.Magenta; // Default magenta
+                BoundingBoxOpacity = 0.3f; // Default 30%
+            }
+            
             // Start with both weapons in inventory, default to gun (pistol)
             _weaponInventory[typeof(Sword)] = new Sword();
             _weaponInventory[typeof(Gun)] = new Gun();
@@ -114,6 +126,10 @@ namespace Project9
             
             // Update Z height
             ZHeight = playerData.ZHeight;
+            
+            // Update bounding box color and opacity
+            BoundingBoxColor = new Color((byte)playerData.BoundingBoxColorR, (byte)playerData.BoundingBoxColorG, (byte)playerData.BoundingBoxColorB, (byte)255);
+            BoundingBoxOpacity = playerData.BoundingBoxOpacity;
             
             if (dimensionsChanged && _diamondTexture != null)
             {
@@ -1095,7 +1111,8 @@ namespace Project9
             if (visible && _diamondTexture != null)
             {
                 Vector2 drawPosition = _position - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
-                Color drawColor = _isSneaking ? _sneakColor : _normalColor;
+                // Use bounding box color for the diamond sprite to match the bounding box
+                Color drawColor = _boundingBoxColor;
                 
                 // Apply pulsing effect for dead player
                 if (_isDead)

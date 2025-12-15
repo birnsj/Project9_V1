@@ -758,9 +758,9 @@ namespace Project9.Editor
             if (_tileBrowserWindow.Visible)
             {
                 _tileBrowserWindow.BringToFront();
-            }
-            else
-            {
+                }
+                else
+                {
                 CenterWindowOnEditor(_tileBrowserWindow);
                 _tileBrowserWindow.Show();
             }
@@ -1070,10 +1070,10 @@ namespace Project9.Editor
             {
                 // Center the window on the editor form
                 CenterWindowOnEditor(_enemyPropertiesWindow);
-                _enemyPropertiesWindow.Show();
-            }
-            else
-            {
+                    _enemyPropertiesWindow.Show();
+                }
+                else
+                {
                 _enemyPropertiesWindow.BringToFront();
             }
         }
@@ -1157,7 +1157,7 @@ namespace Project9.Editor
                 _leftSplitter.Visible = true;
                 _leftSplitter.BringToFront();
             }
-        }
+            }
 
         /// <summary>
         /// Gets the right splitter for external access
@@ -1231,10 +1231,10 @@ namespace Project9.Editor
             {
                 // Center the window on the editor form
                 CenterWindowOnEditor(_playerPropertiesWindow);
-                _playerPropertiesWindow.Show();
-            }
-            else
-            {
+                    _playerPropertiesWindow.Show();
+                }
+                else
+                {
                 _playerPropertiesWindow.BringToFront();
             }
             UpdatePlayerPropertiesMenuItemChecked();
@@ -1290,10 +1290,10 @@ namespace Project9.Editor
             {
                 // Center the window on the editor form
                 CenterWindowOnEditor(_cameraPropertiesWindow);
-                _cameraPropertiesWindow.Show();
-            }
-            else
-            {
+                    _cameraPropertiesWindow.Show();
+                }
+                else
+                {
                 _cameraPropertiesWindow.BringToFront();
             }
             UpdateCameraPropertiesMenuItemChecked();
@@ -1336,10 +1336,10 @@ namespace Project9.Editor
             {
                 // Center the window on the editor form
                 CenterWindowOnEditor(_weaponPropertiesWindow);
-                _weaponPropertiesWindow.Show();
-            }
-            else
-            {
+                    _weaponPropertiesWindow.Show();
+                }
+                else
+                {
                 _weaponPropertiesWindow.BringToFront();
             }
             UpdateWeaponPropertiesMenuItemChecked();
@@ -1648,11 +1648,11 @@ namespace Project9.Editor
                     }
                     UpdateCameraPropertiesMenuItemChecked();
                 }
-
+                
                 if (layout.WeaponPropertiesWindow != null)
                 {
                     if (_weaponPropertiesWindow == null || _weaponPropertiesWindow.IsDisposed)
-                    {
+                {
                         _weaponPropertiesWindow = new WeaponPropertiesWindow();
                         _weaponPropertiesWindow.SetSaveCallback(() => SaveWeaponProperties());
                         _weaponPropertiesWindow.Owner = this;
@@ -1672,7 +1672,7 @@ namespace Project9.Editor
                     }
                     UpdateWeaponPropertiesMenuItemChecked();
                 }
-
+                
                 if (layout.CollisionWindow != null)
                 {
                     if (_collisionWindow == null || _collisionWindow.IsDisposed)
@@ -1772,7 +1772,7 @@ namespace Project9.Editor
         }
 
         private void CollisionModeMenuItem_Click(object? sender, EventArgs e)
-        {
+            {
             if (_collisionWindow == null || _collisionWindow.IsDisposed)
             {
                 _collisionWindow = new CollisionWindow();
@@ -1784,14 +1784,14 @@ namespace Project9.Editor
             if (_collisionWindow.Visible)
             {
                 _collisionWindow.BringToFront();
-            }
-            else
-            {
-                // Automatically enable collision mode when showing the window
-                if (_mapRenderControl != null)
-                {
-                    _mapRenderControl.CollisionMode = true;
                 }
+                else
+                {
+            // Automatically enable collision mode when showing the window
+            if (_mapRenderControl != null)
+            {
+                _mapRenderControl.CollisionMode = true;
+            }
                 CenterWindowOnEditor(_collisionWindow);
                 _collisionWindow.Show();
             }

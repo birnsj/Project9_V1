@@ -17,6 +17,7 @@ namespace Project9.Editor
         private TextBox _nameTextBox = null!;
         private Label _nameLabel = null!;
         private Action? _onSaveCallback;
+        private Button? _colorPickerButton;
         private bool _isDocked = false;
         private Form? _parentForm;
         private MapRenderControl? _mapRenderControl;
@@ -347,7 +348,7 @@ namespace Project9.Editor
         private void InitializeComponent()
         {
             this.Text = "Enemy Properties";
-            this.Size = new Size(350, 500);
+            this.Size = new Size(350, 650); // 30% taller (500 * 1.3 = 650)
             this.FormBorderStyle = FormBorderStyle.SizableToolWindow;
             this.ShowInTaskbar = false;
             this.StartPosition = FormStartPosition.Manual;
@@ -489,6 +490,85 @@ namespace Project9.Editor
             };
             previewPanel.Controls.Add(previewLabel);
             this.Controls.Add(previewPanel);
+            
+            // Bounding box color picker panel
+            Panel colorPickerPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 50,
+                BackColor = Color.FromArgb(245, 245, 245),
+                Padding = new Padding(10, 8, 10, 8)
+            };
+            colorPickerPanel.Paint += (s, e) =>
+            {
+                // Draw bottom border
+                using (var pen = new Pen(Color.FromArgb(220, 220, 220), 1))
+                {
+                    e.Graphics.DrawLine(pen, 0, colorPickerPanel.Height - 1, colorPickerPanel.Width, colorPickerPanel.Height - 1);
+                }
+            };
+            
+            Label colorLabel = new Label
+            {
+                Text = "Bounding Box Color:",
+                Location = new Point(10, 15),
+                Size = new Size(130, 20),
+                Font = new Font("Segoe UI", 9),
+                ForeColor = Color.FromArgb(30, 30, 30)
+            };
+            
+            _colorPickerButton = new Button
+            {
+                Location = new Point(145, 10),
+                Size = new Size(100, 30),
+                Text = "Pick Color",
+                Font = new Font("Segoe UI", 9),
+                BackColor = Color.Cyan,
+                ForeColor = Color.Black,
+                FlatStyle = FlatStyle.Flat,
+                UseVisualStyleBackColor = false
+            };
+            _colorPickerButton.FlatAppearance.BorderSize = 1;
+            _colorPickerButton.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
+            _colorPickerButton.Click += (s, e) =>
+            {
+                if (_currentEnemy != null)
+                {
+                    using (ColorDialog colorDialog = new ColorDialog())
+                    {
+                        // Set current color
+                        colorDialog.Color = Color.FromArgb(
+                            _currentEnemy.BoundingBoxColorR,
+                            _currentEnemy.BoundingBoxColorG,
+                            _currentEnemy.BoundingBoxColorB
+                        );
+                        colorDialog.FullOpen = true;
+                        
+                        if (colorDialog.ShowDialog() == DialogResult.OK)
+                        {
+                            // Update the color values
+                            _currentEnemy.BoundingBoxColorR = colorDialog.Color.R;
+                            _currentEnemy.BoundingBoxColorG = colorDialog.Color.G;
+                            _currentEnemy.BoundingBoxColorB = colorDialog.Color.B;
+                            
+                            // Update button color
+                            _colorPickerButton.BackColor = colorDialog.Color;
+                            
+                            // Refresh property grid and preview
+                            UpdatePropertyGrid();
+                            previewPanel.Invalidate();
+                            _mapRenderControl?.Invalidate();
+                            
+                            // Auto-save
+                            _onSaveCallback?.Invoke();
+                        }
+                    }
+                }
+            };
+            
+            colorPickerPanel.Controls.Add(colorLabel);
+            colorPickerPanel.Controls.Add(_colorPickerButton);
+            this.Controls.Add(colorPickerPanel);
             
             // Property grid with better styling
             _propertyGrid = new PropertyGrid
@@ -663,6 +743,16 @@ namespace Project9.Editor
         {
             if (_currentEnemy != null)
             {
+                // Update color picker button
+                if (_colorPickerButton != null)
+                {
+                    _colorPickerButton.BackColor = Color.FromArgb(
+                        _currentEnemy.BoundingBoxColorR,
+                        _currentEnemy.BoundingBoxColorG,
+                        _currentEnemy.BoundingBoxColorB
+                    );
+                }
+                
                 // Update name text box (temporarily disable TextChanged to avoid triggering save)
                 _nameTextBox.TextChanged -= _nameTextBox_TextChanged;
                 _nameTextBox.Text = _currentEnemy.Name ?? "";
@@ -915,6 +1005,38 @@ namespace Project9.Editor
                 get => _enemy.ZHeight;
                 set => _enemy.ZHeight = Math.Max(0.0f, value);
             }
+            
+            [System.ComponentModel.Category("Bounding Box")]
+            [System.ComponentModel.Description("Bounding box color - Red component (0-255)")]
+            public byte BoundingBoxColorR
+            {
+                get => _enemy.BoundingBoxColorR;
+                set => _enemy.BoundingBoxColorR = value;
+            }
+            
+            [System.ComponentModel.Category("Bounding Box")]
+            [System.ComponentModel.Description("Bounding box color - Green component (0-255)")]
+            public byte BoundingBoxColorG
+            {
+                get => _enemy.BoundingBoxColorG;
+                set => _enemy.BoundingBoxColorG = value;
+            }
+            
+            [System.ComponentModel.Category("Bounding Box")]
+            [System.ComponentModel.Description("Bounding box color - Blue component (0-255)")]
+            public byte BoundingBoxColorB
+            {
+                get => _enemy.BoundingBoxColorB;
+                set => _enemy.BoundingBoxColorB = value;
+            }
+            
+            [System.ComponentModel.Category("Bounding Box")]
+            [System.ComponentModel.Description("Bounding box opacity (0.0 to 1.0, where 0.3 = 30%)")]
+            public float BoundingBoxOpacity
+            {
+                get => _enemy.BoundingBoxOpacity;
+                set => _enemy.BoundingBoxOpacity = Math.Clamp(value, 0.0f, 1.0f);
+            }
         }
         
         private void DrawBoundingBoxPreview(Graphics g, Rectangle bounds)
@@ -952,6 +1074,13 @@ namespace Project9.Editor
             float halfWidth = width / 2.0f;
             float halfHeight = height / 2.0f;
             
+            // Get bounding box color from entity data
+            Color boxColor = Color.FromArgb(
+                _currentEnemy.BoundingBoxColorR,
+                _currentEnemy.BoundingBoxColorG,
+                _currentEnemy.BoundingBoxColorB
+            );
+            
             // ZHeight represents the TOP of the object
             // Base is always at z = 0, top is at z = zHeight
             const float heightScale = 0.5f;
@@ -973,12 +1102,12 @@ namespace Project9.Editor
                 PointF topBottom = new PointF(centerX, centerY + halfHeight * scale - zOffsetY * scale);
                 PointF topLeft = new PointF(centerX - halfWidth * scale, centerY - zOffsetY * scale);
                 
-                // Use default opacity for preview (matches MapRenderControl default)
-                const float previewOpacity = 0.3f;
+                // Use entity's opacity for preview
+                float previewOpacity = _currentEnemy.BoundingBoxOpacity;
                 int alpha = (int)(previewOpacity * 255.0f);
-                Color fillColor = Color.FromArgb(alpha, Color.Cyan);
+                Color fillColor = Color.FromArgb(alpha, boxColor);
                 
-                // Draw filled faces with semi-transparent cyan
+                // Draw filled faces with semi-transparent color
                 using (SolidBrush fillBrush = new SolidBrush(fillColor))
                 {
                     // Bottom face (isometric diamond at z=0)
@@ -1003,7 +1132,7 @@ namespace Project9.Editor
                     g.FillPolygon(fillBrush, sideFace4);
                 }
                 
-                using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
+                using (Pen boxPen = new Pen(boxColor, 2.0f))
                 {
                     // Bottom face (isometric diamond at z=0)
                     g.DrawLine(boxPen, bottomTop, bottomRight);
@@ -1035,17 +1164,17 @@ namespace Project9.Editor
                     new PointF(centerX - halfWidth * scale, centerY)               // Left
                 };
                 
-                // Draw filled diamond with semi-transparent cyan
-                const float previewOpacity = 0.3f;
+                // Draw filled diamond with entity's opacity
+                float previewOpacity = _currentEnemy.BoundingBoxOpacity;
                 int alpha = (int)(previewOpacity * 255.0f);
-                Color fillColor = Color.FromArgb(alpha, Color.Cyan);
+                Color fillColor = Color.FromArgb(alpha, boxColor);
                 using (SolidBrush fillBrush = new SolidBrush(fillColor))
                 {
                     g.FillPolygon(fillBrush, diamondPoints);
                 }
                 
                 // Draw outline
-                using (Pen boxPen = new Pen(Color.Cyan, 2.0f))
+                using (Pen boxPen = new Pen(boxColor, 2.0f))
                 {
                     g.DrawPolygon(boxPen, diamondPoints);
                 }

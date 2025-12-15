@@ -92,6 +92,18 @@ namespace Project9.Shared
         
         [JsonPropertyName("zHeight")]
         public float ZHeight { get; set; } = 0.0f; // Z height for 3D isometric rendering
+        
+        [JsonPropertyName("boundingBoxColorR")]
+        public byte BoundingBoxColorR { get; set; } = 0; // Red component (default cyan: 0)
+        
+        [JsonPropertyName("boundingBoxColorG")]
+        public byte BoundingBoxColorG { get; set; } = 255; // Green component (default cyan: 255)
+        
+        [JsonPropertyName("boundingBoxColorB")]
+        public byte BoundingBoxColorB { get; set; } = 255; // Blue component (default cyan: 255)
+        
+        [JsonPropertyName("boundingBoxOpacity")]
+        public float BoundingBoxOpacity { get; set; } = 0.3f; // Opacity (0.0 to 1.0, default 30%)
     }
 
     /// <summary>
@@ -160,6 +172,18 @@ namespace Project9.Shared
         
         [JsonPropertyName("zHeight")]
         public float ZHeight { get; set; } = 0.0f; // Z height for 3D isometric rendering
+        
+        [JsonPropertyName("boundingBoxColorR")]
+        public byte BoundingBoxColorR { get; set; } = 0; // Red component (default cyan: 0)
+        
+        [JsonPropertyName("boundingBoxColorG")]
+        public byte BoundingBoxColorG { get; set; } = 255; // Green component (default cyan: 255)
+        
+        [JsonPropertyName("boundingBoxColorB")]
+        public byte BoundingBoxColorB { get; set; } = 255; // Blue component (default cyan: 255)
+        
+        [JsonPropertyName("boundingBoxOpacity")]
+        public float BoundingBoxOpacity { get; set; } = 0.3f; // Opacity (0.0 to 1.0, default 30%)
     }
 
     /// <summary>
@@ -226,6 +250,18 @@ namespace Project9.Shared
         
         [JsonPropertyName("zHeight")]
         public float ZHeight { get; set; } = 0.0f; // Z height for 3D isometric rendering
+        
+        [JsonPropertyName("boundingBoxColorR")]
+        public byte BoundingBoxColorR { get; set; } = 0; // Red component (default cyan: 0)
+        
+        [JsonPropertyName("boundingBoxColorG")]
+        public byte BoundingBoxColorG { get; set; } = 255; // Green component (default cyan: 255)
+        
+        [JsonPropertyName("boundingBoxColorB")]
+        public byte BoundingBoxColorB { get; set; } = 255; // Blue component (default cyan: 255)
+        
+        [JsonPropertyName("boundingBoxOpacity")]
+        public float BoundingBoxOpacity { get; set; } = 0.3f; // Opacity (0.0 to 1.0, default 30%)
     }
 
     /// <summary>

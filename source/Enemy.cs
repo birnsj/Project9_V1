@@ -211,6 +211,18 @@ namespace Project9
             
             // Set Z height from EnemyData
             ZHeight = enemyData?.ZHeight ?? 0.0f;
+            
+            // Set bounding box color from EnemyData (default to cyan)
+            if (enemyData != null)
+            {
+                BoundingBoxColor = new Color((byte)enemyData.BoundingBoxColorR, (byte)enemyData.BoundingBoxColorG, (byte)enemyData.BoundingBoxColorB, (byte)255);
+                BoundingBoxOpacity = enemyData.BoundingBoxOpacity;
+            }
+            else
+            {
+                BoundingBoxColor = Color.Magenta; // Default magenta
+                BoundingBoxOpacity = 0.3f; // Default 30%
+            }
         }
         
         /// <summary>
@@ -257,6 +269,10 @@ namespace Project9
             
             // Update Z height
             ZHeight = _enemyData.ZHeight;
+            
+            // Update bounding box color
+            BoundingBoxColor = new Color((byte)_enemyData.BoundingBoxColorR, (byte)_enemyData.BoundingBoxColorG, (byte)_enemyData.BoundingBoxColorB, (byte)255);
+            BoundingBoxOpacity = _enemyData.BoundingBoxOpacity;
             
             if (dimensionsChanged && _diamondTexture != null)
             {
@@ -1363,21 +1379,8 @@ namespace Project9
 
             if (visible && _diamondTexture != null)
             {
-                Color drawColor;
-                
-                // Show different color when stunned (knockback effect)
-                if (IsStunned)
-                {
-                    drawColor = Color.Cyan; // Cyan color when stunned/knockback
-                }
-                else if (_isAttacking)
-                {
-                    drawColor = Color.OrangeRed;
-                }
-                else
-                {
-                    drawColor = _color;
-                }
+                // Use bounding box color for the diamond sprite to match the bounding box
+                Color drawColor = _boundingBoxColor;
                 
                 Vector2 drawPosition = _position - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
                 

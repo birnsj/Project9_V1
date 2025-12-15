@@ -32,6 +32,8 @@ namespace Project9
         protected float _boundingBoxDepth = 64.0f;
         protected Texture2D? _boundingBoxTexture;
         protected bool _showBoundingBox = false;
+        protected Color _boundingBoxColor = Color.Magenta; // Default magenta color
+        protected float _boundingBoxOpacity = 0.3f; // Default 30% opacity
         
         public float BoundingBoxWidth
         {
@@ -55,6 +57,18 @@ namespace Project9
         {
             get => _showBoundingBox;
             set => _showBoundingBox = value;
+        }
+        
+        public Color BoundingBoxColor
+        {
+            get => _boundingBoxColor;
+            set => _boundingBoxColor = value;
+        }
+        
+        public float BoundingBoxOpacity
+        {
+            get => _boundingBoxOpacity;
+            set => _boundingBoxOpacity = Math.Clamp(value, 0.0f, 1.0f);
         }
 
         // ===== MOVEMENT =====
@@ -361,8 +375,9 @@ namespace Project9
                 }
                 
                 Vector2 drawPosition = basePosition - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
+                // Use bounding box color for the diamond sprite to match the bounding box
                 // Use lower layerDepth (0.1) so entity sprite draws behind bounding box
-                spriteBatch.Draw(_diamondTexture, drawPosition, null, _color, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0.1f);
+                spriteBatch.Draw(_diamondTexture, drawPosition, null, _boundingBoxColor, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0.1f);
             }
         }
         
@@ -498,8 +513,12 @@ namespace Project9
             float halfWidth = _boundingBoxWidth / 2.0f;
             float halfHeight = _boundingBoxHeight / 2.0f;
             
-            // Cyan color for wireframe
-            Color cyanColor = new Color((byte)0, (byte)255, (byte)255, (byte)255);
+            // Use entity's bounding box color
+            Color boxColor = _boundingBoxColor;
+            
+            // Calculate fill color using entity's opacity setting
+            byte fillAlpha = (byte)Math.Round(_boundingBoxOpacity * 255.0f);
+            Color fillColor = new Color(boxColor.R, boxColor.G, boxColor.B, fillAlpha);
             
             // ZHeight represents the TOP of the object
             // Base is always at z = 0, top is at z = zHeight
@@ -517,8 +536,11 @@ namespace Project9
                     new Vector2(_position.X - halfWidth, _position.Y)
                 };
                 
-                // Draw outline only
-                DrawPolygonOutline(spriteBatch, diamondPoints, cyanColor, 3.0f);
+                // Draw filled diamond with 30% opacity
+                DrawFilledPolygon(spriteBatch, diamondPoints, fillColor);
+                
+                // Draw outline at 100% opacity
+                DrawPolygonOutline(spriteBatch, diamondPoints, boxColor, 3.0f);
                 return;
             }
             
@@ -540,27 +562,50 @@ namespace Project9
             Vector2 topBottom = new Vector2(_position.X, _position.Y + halfHeight - zOffsetY);
             Vector2 topLeft = new Vector2(_position.X - halfWidth, _position.Y - zOffsetY);
             
-            // Draw wireframe outline using cyan color
+            // Draw filled faces with 30% opacity (like editor)
+            
+            // Bottom face (isometric diamond at z=0)
+            Vector2[] bottomFace = new Vector2[] { bottomTop, bottomRight, bottomBottom, bottomLeft };
+            DrawFilledPolygon(spriteBatch, bottomFace, fillColor);
+            
+            // Top face (isometric diamond at z=zHeight)
+            Vector2[] topFace = new Vector2[] { topTop, topRight, topBottom, topLeft };
+            DrawFilledPolygon(spriteBatch, topFace, fillColor);
+            
+            // Side faces (4 trapezoids connecting bottom to top)
+            Vector2[] sideFace1 = new Vector2[] { bottomTop, bottomRight, topRight, topTop };
+            DrawFilledPolygon(spriteBatch, sideFace1, fillColor);
+            
+            Vector2[] sideFace2 = new Vector2[] { bottomRight, bottomBottom, topBottom, topRight };
+            DrawFilledPolygon(spriteBatch, sideFace2, fillColor);
+            
+            Vector2[] sideFace3 = new Vector2[] { bottomBottom, bottomLeft, topLeft, topBottom };
+            DrawFilledPolygon(spriteBatch, sideFace3, fillColor);
+            
+            Vector2[] sideFace4 = new Vector2[] { bottomLeft, bottomTop, topTop, topLeft };
+            DrawFilledPolygon(spriteBatch, sideFace4, fillColor);
+            
+            // Draw wireframe outline using entity's bounding box color at 100% opacity
             Texture2D? lineTexture = GetWhiteTexture(spriteBatch.GraphicsDevice);
             if (lineTexture == null) return;
             
             // Bottom face (isometric diamond at z=0) - draw first so it's behind
-            DrawLine(spriteBatch, lineTexture, bottomTop, bottomRight, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, bottomRight, bottomBottom, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, bottomBottom, bottomLeft, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, bottomLeft, bottomTop, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomTop, bottomRight, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomRight, bottomBottom, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomBottom, bottomLeft, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomLeft, bottomTop, boxColor, 3.0f);
             
             // Vertical edges connecting bottom to top - draw these before top face so they're visible
-            DrawLine(spriteBatch, lineTexture, bottomTop, topTop, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, bottomRight, topRight, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, bottomBottom, topBottom, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, bottomLeft, topLeft, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomTop, topTop, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomRight, topRight, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomBottom, topBottom, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, bottomLeft, topLeft, boxColor, 3.0f);
             
             // Top face (isometric diamond at z=zHeight) - draw last so it's on top
-            DrawLine(spriteBatch, lineTexture, topTop, topRight, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, topRight, topBottom, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, topBottom, topLeft, cyanColor, 3.0f);
-            DrawLine(spriteBatch, lineTexture, topLeft, topTop, cyanColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, topTop, topRight, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, topRight, topBottom, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, topBottom, topLeft, boxColor, 3.0f);
+            DrawLine(spriteBatch, lineTexture, topLeft, topTop, boxColor, 3.0f);
         }
         
         /// <summary>
