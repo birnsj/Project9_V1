@@ -26,10 +26,7 @@ namespace Project9.Editor
         private Button? _loadGraphicButton;
         private Panel? _previewPanel;
         private Panel? _tileInfoPanel;
-        private Label? _tileInfoLabel;
         private Label? _tileDimensionsLabel;
-        private Label? _tileFormatLabel;
-        private Label? _tilePathLabel;
         private Label? _tileTerrainLabel;
         private bool _isDragging = false;
         private Point _dragStartPosition;
@@ -365,7 +362,7 @@ namespace Project9.Editor
         private void InitializeComponent()
         {
             this.Text = "Tile Properties";
-            this.Size = new Size(380, 800);
+            this.Size = new Size(350, 650);
             this.FormBorderStyle = FormBorderStyle.SizableToolWindow;
             this.ShowInTaskbar = false;
             this.StartPosition = FormStartPosition.Manual;
@@ -441,15 +438,14 @@ namespace Project9.Editor
             
             titlePanel.Controls.Add(_titleLabel);
             titlePanel.Controls.Add(dockButton);
-            this.Controls.Add(titlePanel);
 
-            // Tile Information panel
+            // Tile Information panel (similar to name panel in other property windows)
             _tileInfoPanel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 140,
+                Height = 50,
                 BackColor = Color.FromArgb(250, 250, 250),
-                Padding = new Padding(12, 12, 12, 12)
+                Padding = new Padding(10, 8, 10, 8)
             };
             _tileInfoPanel.Paint += (s, e) =>
             {
@@ -460,79 +456,38 @@ namespace Project9.Editor
                 }
             };
             
-            _tileInfoLabel = new Label
-            {
-                Text = "Tile Information",
-                Dock = DockStyle.Top,
-                Height = 22,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(50, 50, 50),
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                BackColor = Color.Transparent,
-                Padding = new Padding(0, 0, 0, 8)
-            };
-            
             _tileTerrainLabel = new Label
             {
-                Text = "Terrain Type: None",
-                Dock = DockStyle.Top,
-                Height = 20,
+                Text = "Terrain: None",
+                Location = new Point(10, 12),
+                Size = new Size(150, 20),
                 TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(70, 70, 70),
+                ForeColor = Color.FromArgb(30, 30, 30),
                 Font = new Font("Segoe UI", 9),
-                BackColor = Color.Transparent,
-                Padding = new Padding(0, 0, 0, 4)
+                BackColor = Color.Transparent
             };
             
             _tileDimensionsLabel = new Label
             {
-                Text = "Dimensions: -",
-                Dock = DockStyle.Top,
-                Height = 20,
+                Text = "Size: -",
+                Location = new Point(170, 12),
+                Size = new Size(150, 20),
                 TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(70, 70, 70),
+                ForeColor = Color.FromArgb(30, 30, 30),
                 Font = new Font("Segoe UI", 9),
-                BackColor = Color.Transparent,
-                Padding = new Padding(0, 0, 0, 4)
+                BackColor = Color.Transparent
             };
             
-            _tileFormatLabel = new Label
-            {
-                Text = "Format: PNG with Alpha",
-                Dock = DockStyle.Top,
-                Height = 20,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(70, 70, 70),
-                Font = new Font("Segoe UI", 9),
-                BackColor = Color.Transparent,
-                Padding = new Padding(0, 0, 0, 4)
-            };
-            
-            _tilePathLabel = new Label
-            {
-                Text = "Path: -",
-                Dock = DockStyle.Top,
-                Height = 20,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(70, 70, 70),
-                Font = new Font("Segoe UI", 8.5f),
-                BackColor = Color.Transparent,
-                Padding = new Padding(0, 0, 0, 4)
-            };
-            
-            _tileInfoPanel.Controls.Add(_tilePathLabel);
-            _tileInfoPanel.Controls.Add(_tileFormatLabel);
-            _tileInfoPanel.Controls.Add(_tileDimensionsLabel);
             _tileInfoPanel.Controls.Add(_tileTerrainLabel);
-            _tileInfoPanel.Controls.Add(_tileInfoLabel);
+            _tileInfoPanel.Controls.Add(_tileDimensionsLabel);
 
             // Tile preview panel
             _previewPanel = new Panel
             {
-                Dock = DockStyle.Top,
-                Height = 240,
+                Dock = DockStyle.Bottom,
+                Height = 150,
                 BackColor = Color.FromArgb(30, 30, 30),
-                Padding = new Padding(10)
+                Padding = new Padding(5)
             };
             
             Label previewLabel = new Label
@@ -557,13 +512,13 @@ namespace Project9.Editor
             _previewPanel.Controls.Add(_previewPictureBox);
             _previewPanel.Controls.Add(previewLabel);
             
-            // Load new graphic button panel
+            // Load new graphic button panel (similar to color picker panel in other property windows)
             Panel loadGraphicPanel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 60,
+                Height = 50,
                 BackColor = Color.FromArgb(245, 245, 245),
-                Padding = new Padding(10, 10, 10, 10)
+                Padding = new Padding(10, 8, 10, 8)
             };
             loadGraphicPanel.Paint += (s, e) =>
             {
@@ -574,22 +529,33 @@ namespace Project9.Editor
                 }
             };
             
+            Label loadLabel = new Label
+            {
+                Text = "Load Graphic:",
+                Location = new Point(10, 15),
+                Size = new Size(100, 20),
+                Font = new Font("Segoe UI", 9),
+                ForeColor = Color.FromArgb(30, 30, 30)
+            };
+            
             _loadGraphicButton = new Button
             {
-                Text = "Load New Graphic",
-                Dock = DockStyle.Fill,
-                Height = 40,
+                Text = "Load",
+                Location = new Point(115, 10),
+                Size = new Size(100, 30),
                 FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(0, 150, 0),
+                Font = new Font("Segoe UI", 9),
+                ForeColor = Color.Black,
+                BackColor = Color.FromArgb(230, 230, 230),
                 Cursor = Cursors.Hand
             };
-            _loadGraphicButton.FlatAppearance.BorderSize = 0;
-            _loadGraphicButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 130, 0);
-            _loadGraphicButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(0, 110, 0);
+            _loadGraphicButton.FlatAppearance.BorderSize = 1;
+            _loadGraphicButton.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
+            _loadGraphicButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(210, 210, 210);
+            _loadGraphicButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(190, 190, 190);
             _loadGraphicButton.Click += LoadGraphicButton_Click;
             
+            loadGraphicPanel.Controls.Add(loadLabel);
             loadGraphicPanel.Controls.Add(_loadGraphicButton);
             
             // Property grid with better styling
@@ -648,11 +614,16 @@ namespace Project9.Editor
             
             bottomPanel.Controls.Add(saveButton);
             
-            this.Controls.Add(_propertyGrid);
-            this.Controls.Add(loadGraphicPanel);
-            this.Controls.Add(_previewPanel);
-            this.Controls.Add(_tileInfoPanel);
-            this.Controls.Add(bottomPanel);
+            // Add controls in correct docking order:
+            // Bottom-docked first (bottom to top), then Fill, then Top-docked (top to bottom)
+            // For top-docked: first added = topmost position
+            // For bottom-docked: first added = bottommost position
+            this.Controls.Add(bottomPanel);            // Bottom-docked: bottommost
+            this.Controls.Add(_previewPanel);          // Bottom-docked: above bottom
+            this.Controls.Add(_propertyGrid);          // Fill: takes remaining space
+            this.Controls.Add(titlePanel);             // Top-docked: topmost (first top-docked = at top)
+            this.Controls.Add(_tileInfoPanel);        // Top-docked: below title (second top-docked)
+            this.Controls.Add(loadGraphicPanel);       // Top-docked: below tile info (third top-docked)
             
             // Enable dragging for title panel to undock
             titlePanel.MouseDown += TitlePanel_MouseDown;
@@ -781,7 +752,7 @@ namespace Project9.Editor
             
             if (_tileTerrainLabel != null)
             {
-                _tileTerrainLabel.Text = $"Terrain Type: {_currentTile.TerrainType}";
+                _tileTerrainLabel.Text = $"Terrain: {_currentTile.TerrainType}";
             }
             
             // Get texture dimensions if available
@@ -792,42 +763,14 @@ namespace Project9.Editor
                 {
                     if (_tileDimensionsLabel != null)
                     {
-                        _tileDimensionsLabel.Text = $"Dimensions: {texture.Width} × {texture.Height} pixels";
-                    }
-                    
-                    // Determine file path
-                    string texturePath;
-                    if (_currentTile.TerrainType == TerrainType.Test || _currentTile.TerrainType == TerrainType.Test2)
-                    {
-                        texturePath = $"Content/sprites/tiles/test/{_currentTile.TerrainType}.png";
-                    }
-                    else
-                    {
-                        texturePath = $"Content/sprites/tiles/template/{_currentTile.TerrainType}.png";
-                    }
-                    
-                    string? resolvedPath = ResolveTexturePath(texturePath);
-                    if (_tilePathLabel != null)
-                    {
-                        if (resolvedPath != null && File.Exists(resolvedPath))
-                        {
-                            _tilePathLabel.Text = $"Path: {resolvedPath}";
-                        }
-                        else
-                        {
-                            _tilePathLabel.Text = $"Path: {texturePath} (not found)";
-                        }
+                        _tileDimensionsLabel.Text = $"Size: {texture.Width}×{texture.Height}";
                     }
                 }
                 else
                 {
                     if (_tileDimensionsLabel != null)
                     {
-                        _tileDimensionsLabel.Text = "Dimensions: -";
-                    }
-                    if (_tilePathLabel != null)
-                    {
-                        _tilePathLabel.Text = "Path: Texture not loaded";
+                        _tileDimensionsLabel.Text = "Size: -";
                     }
                 }
             }
@@ -835,11 +778,7 @@ namespace Project9.Editor
             {
                 if (_tileDimensionsLabel != null)
                 {
-                    _tileDimensionsLabel.Text = "Dimensions: -";
-                }
-                if (_tilePathLabel != null)
-                {
-                    _tilePathLabel.Text = "Path: -";
+                    _tileDimensionsLabel.Text = "Size: -";
                 }
             }
         }
@@ -848,15 +787,11 @@ namespace Project9.Editor
         {
             if (_tileTerrainLabel != null)
             {
-                _tileTerrainLabel.Text = "Terrain Type: None";
+                _tileTerrainLabel.Text = "Terrain: None";
             }
             if (_tileDimensionsLabel != null)
             {
-                _tileDimensionsLabel.Text = "Dimensions: -";
-            }
-            if (_tilePathLabel != null)
-            {
-                _tilePathLabel.Text = "Path: -";
+                _tileDimensionsLabel.Text = "Size: -";
             }
         }
 
