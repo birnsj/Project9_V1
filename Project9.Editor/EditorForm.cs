@@ -195,6 +195,10 @@ namespace Project9.Editor
             comfyUIMenuItem.Click += ComfyUIMenuItem_Click;
             toolsMenu.DropDownItems.Add(comfyUIMenuItem);
             
+            ToolStripMenuItem generateImageMenuItem = new ToolStripMenuItem("Generate Image");
+            generateImageMenuItem.Click += GenerateImageMenuItem_Click;
+            toolsMenu.DropDownItems.Add(generateImageMenuItem);
+            
             toolsMenu.DropDownItems.Add(new ToolStripSeparator());
             
             ToolStripMenuItem comfyUISettingsMenuItem = new ToolStripMenuItem("ComfyUI Settings...");
@@ -1807,6 +1811,15 @@ namespace Project9.Editor
                     _comfyUISettings = settingsDialog.Settings;
                     _comfyUISettings.Save();
                 }
+            }
+        }
+
+        private void GenerateImageMenuItem_Click(object? sender, EventArgs e)
+        {
+            using (GenerateImageDialog dialog = new GenerateImageDialog())
+            {
+                dialog.Owner = this;
+                dialog.ShowDialog();
             }
         }
 
