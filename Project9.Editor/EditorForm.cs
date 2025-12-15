@@ -36,6 +36,7 @@ namespace Project9.Editor
         private WeaponPropertiesWindow? _weaponPropertiesWindow;
         private CollisionWindow? _collisionWindow;
         private TileBrowserWindow? _tileBrowserWindow;
+        private TilePropertiesWindow? _tilePropertiesWindow;
         private ToolStripMenuItem? _showEnemyConesMenuItem;
         private ToolStripMenuItem? _showCameraConesMenuItem;
         private ToolStripMenuItem? _showGrid32x16MenuItem;
@@ -757,6 +758,7 @@ namespace Project9.Editor
                 _tileBrowserWindow.SetTextureLoader(_textureLoader);
                 _tileBrowserWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
                 _tileBrowserWindow.VisibleChanged += (s, e) => UpdateTileBrowserMenuItemChecked();
+                _tileBrowserWindow.TileRightClicked += TileBrowserWindow_TileRightClicked;
             }
 
             if (_tileBrowserWindow.Visible)
@@ -964,6 +966,7 @@ namespace Project9.Editor
                 _tileBrowserWindow.SetTextureLoader(_textureLoader);
                 _tileBrowserWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
                 _tileBrowserWindow.VisibleChanged += (s, e) => UpdateTileBrowserMenuItemChecked();
+                _tileBrowserWindow.TileRightClicked += TileBrowserWindow_TileRightClicked;
             }
 
             if (_tileBrowserWindow.Visible)
@@ -1399,6 +1402,59 @@ namespace Project9.Editor
                 _weaponPropertiesWindow.Visible && _weaponPropertiesWindow.CurrentWeapon == null)
             {
                 _weaponPropertiesWindow.CurrentWeapon = e.Weapon;
+            }
+        }
+        
+        private void TileBrowserWindow_TileRightClicked(object? sender, TileRightClickedEventArgs e)
+        {
+            // Create or show tile properties window
+            if (_tilePropertiesWindow == null || _tilePropertiesWindow.IsDisposed)
+            {
+                _tilePropertiesWindow = new TilePropertiesWindow();
+                _tilePropertiesWindow.SetSaveCallback(() => SaveTileProperties());
+                _tilePropertiesWindow.Owner = this;
+                _tilePropertiesWindow.SetParentForm(this);
+                _tilePropertiesWindow.SetMapRenderControl(_mapRenderControl);
+                _tilePropertiesWindow.SetTextureLoader(_textureLoader);
+                
+                // Subscribe to docking changes
+                _tilePropertiesWindow.DockingChanged += (s, ev) => AdjustMapControlForDockedWindow();
+            }
+            
+            // Find an existing tile of this type in the map, or create a temporary one for display
+            TileData? existingTile = _mapData?.MapData?.Tiles?.FirstOrDefault(t => t.TerrainType == e.TerrainType);
+            if (existingTile == null)
+            {
+                // Create a temporary tile for display purposes
+                existingTile = new TileData
+                {
+                    X = 0,
+                    Y = 0,
+                    TerrainType = e.TerrainType
+                };
+            }
+            
+            // Set the tile (this will show properties for the terrain type)
+            _tilePropertiesWindow.CurrentTile = existingTile;
+            
+            // Show the window (bring to front if already visible)
+            if (!_tilePropertiesWindow.Visible)
+            {
+                _tilePropertiesWindow.Show();
+                CenterWindowOnEditor(_tilePropertiesWindow);
+            }
+            else
+            {
+                _tilePropertiesWindow.BringToFront();
+            }
+        }
+        
+        private void SaveTileProperties()
+        {
+            // Save the map data
+            if (_mapData != null)
+            {
+                _mapData.SaveAsync().GetAwaiter().GetResult();
             }
         }
 

@@ -29,6 +29,11 @@ namespace Project9.Editor
         /// Event raised when docking state changes
         /// </summary>
         public event EventHandler? DockingChanged;
+        
+        /// <summary>
+        /// Event raised when a tile is right-clicked
+        /// </summary>
+        public event EventHandler<TileRightClickedEventArgs>? TileRightClicked;
 
         public bool IsDocked => _isDocked;
 
@@ -530,6 +535,14 @@ namespace Project9.Editor
                     if (s is PictureBox pb && pb.Tag is TerrainType type)
                     {
                         SelectTile(type, pb);
+                    }
+                };
+                
+                tileBox.MouseDown += (s, e) =>
+                {
+                    if (e.Button == MouseButtons.Right && s is PictureBox pb && pb.Tag is TerrainType type)
+                    {
+                        TileRightClicked?.Invoke(this, new TileRightClickedEventArgs(type));
                     }
                 };
 

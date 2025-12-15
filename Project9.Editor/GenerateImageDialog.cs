@@ -16,12 +16,20 @@ namespace Project9.Editor
     {
         private TextBox _promptTextBox = null!;
         private ComboBox _examplePromptComboBox = null!;
+        private ComboBox _generationStyleComboBox = null!;
         private Button _generateButton = null!;
+        private Button _retryButton = null!;
+        private Button _loadButton = null!;
         private PictureBox _imagePreview = null!;
         private Panel _imagePanel = null!;
         private Label _statusLabel = null!;
         private ProgressBar _progressBar = null!;
         private Label _connectionStatusLabel = null!;
+        private Label _tileInfoLabel = null!;
+        private Label _tileDimensionsLabel = null!;
+        private Label _tileAspectRatioLabel = null!;
+        private Label _tileFormatLabel = null!;
+        private Label _tileTemplateLabel = null!;
         private HttpClient _httpClient = null!;
         private Image? _originalImage = null;
         private float _zoomLevel = 1.0f;
@@ -43,145 +51,289 @@ namespace Project9.Editor
         private void InitializeComponent()
         {
             this.Text = "Generate Image - Isometric Tile Generator";
-            // Window size: 512x256 preview (2:1 aspect ratio) + padding + controls + dropdown
-            this.Size = new Size(600, 750);
+            // Window size: increased height to accommodate tile info section and better spacing
+            this.Size = new Size(760, 1050);
             this.FormBorderStyle = FormBorderStyle.Sizable;
             this.ShowInTaskbar = false;
             this.StartPosition = FormStartPosition.CenterParent;
-            this.BackColor = Color.White;
-            this.MinimumSize = new Size(600, 750);
+            this.BackColor = Color.FromArgb(245, 245, 250);
+            this.MinimumSize = new Size(760, 1050);
             this.Padding = new Padding(20, 20, 20, 20);
+            
+            int currentY = 0;
+            const int spacing = 16;
+            const int sectionSpacing = 28;
             
             // Title label
             Label titleLabel = new Label
             {
                 Text = "Generate Image with Pollinations AI",
-                Location = new Point(0, 0),
-                Size = new Size(1060, 25),
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Location = new Point(0, currentY),
+                Size = new Size(600, 28),
+                Font = new Font("Segoe UI", 12, FontStyle.Bold),
                 ForeColor = Color.FromArgb(30, 30, 30)
             };
+            currentY += 35;
             
-            // Prompt label
+            // Prompt section
             Label promptLabel = new Label
             {
                 Text = "Prompt:",
-                Location = new Point(0, 35),
-                Size = new Size(100, 20),
-                Font = new Font("Segoe UI", 9),
+                Location = new Point(0, currentY),
+                Size = new Size(100, 22),
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 ForeColor = Color.FromArgb(50, 50, 50)
             };
+            currentY += 22;
             
             // Prompt text box (multiline, bigger)
             _promptTextBox = new TextBox
             {
-                Location = new Point(0, 60),
-                Size = new Size(560, 100),
+                Location = new Point(0, currentY),
+                Size = new Size(720, 100),
                 Font = new Font("Segoe UI", 9),
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                Text = ""
+                Text = "",
+                BorderStyle = BorderStyle.FixedSingle
             };
+            currentY += 110 + spacing;
             
             // Example prompts dropdown
             Label exampleLabel = new Label
             {
                 Text = "Example Prompts:",
-                Location = new Point(0, 165),
-                Size = new Size(120, 20),
-                Font = new Font("Segoe UI", 8),
+                Location = new Point(0, currentY),
+                Size = new Size(140, 22),
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 ForeColor = Color.FromArgb(50, 50, 50)
             };
+            currentY += 22;
             
             _examplePromptComboBox = new ComboBox
             {
-                Location = new Point(0, 185),
-                Size = new Size(560, 23),
+                Location = new Point(0, currentY),
+                Size = new Size(720, 25),
                 Font = new Font("Segoe UI", 9),
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                FlatStyle = FlatStyle.Flat
             };
+            currentY += 30 + spacing;
             
-            // Add example prompts (include 2:1 isometric perspective and seamless requirements)
+            // Add example prompts (include 2:1 isometric perspective and seamless on all 4 sides requirements)
             _examplePromptComboBox.Items.AddRange(new object[]
             {
                 "(Select an example or type your own)",
-                "lush green grass with small flowers, 2:1 isometric top-down view, seamless tileable pattern",
-                "dark stone with cracks and texture, 2:1 isometric perspective, seamlessly tileable",
-                "sandy beach with small rocks, 2:1 isometric top-down view, seamless repeating pattern",
-                "forest floor with fallen leaves and moss, 2:1 isometric perspective, tileable seamless",
-                "dirt path with footprints, 2:1 isometric top-down view, seamless tile pattern",
-                "water with ripples, 2:1 isometric perspective, seamlessly tileable",
-                "mossy cobblestone, 2:1 isometric top-down view, seamless repeating tile",
-                "dry cracked earth, 2:1 isometric perspective, tileable seamless pattern",
-                "snow covered ground, 2:1 isometric top-down view, seamlessly tileable",
-                "muddy ground with puddles, 2:1 isometric perspective, seamless tile pattern",
-                "gravel path, 2:1 isometric top-down view, tileable seamless",
-                "brick floor, 2:1 isometric perspective, seamlessly repeating pattern",
-                "wooden plank floor, 2:1 isometric top-down view, seamless tileable",
-                "marble floor with patterns, 2:1 isometric perspective, seamless tile pattern",
-                "grassy meadow with wildflowers, 2:1 isometric top-down view, tileable seamless",
-                "rocky terrain, 2:1 isometric perspective, seamlessly tileable",
-                "swampy marsh, 2:1 isometric top-down view, seamless repeating pattern",
-                "volcanic rock with cracks, 2:1 isometric perspective, tileable seamless",
-                "crystal cave floor, 2:1 isometric top-down view, seamlessly tileable"
+                "lush green grass with small flowers, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "dark stone with cracks and texture, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "sandy beach with small rocks, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "forest floor with fallen leaves and moss, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "dirt path with footprints, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "water with ripples, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "mossy cobblestone, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "dry cracked earth, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "snow covered ground, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "muddy ground with puddles, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "gravel path, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "brick floor, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "wooden plank floor, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "marble floor with patterns, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "grassy meadow with wildflowers, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "rocky terrain, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "swampy marsh, 2:1 isometric top-down view, seamlessly tileable on all 4 sides",
+                "volcanic rock with cracks, 2:1 isometric perspective, seamlessly tileable on all 4 sides",
+                "crystal cave floor, 2:1 isometric top-down view, seamlessly tileable on all 4 sides"
             });
             _examplePromptComboBox.SelectedIndex = 0;
             _examplePromptComboBox.SelectedIndexChanged += ExamplePromptComboBox_SelectedIndexChanged;
             
-            // Generate button
+            // Generation style dropdown
+            Label generationStyleLabel = new Label
+            {
+                Text = "Generation Style:",
+                Location = new Point(0, currentY),
+                Size = new Size(140, 22),
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = Color.FromArgb(50, 50, 50)
+            };
+            currentY += 22;
+            
+            _generationStyleComboBox = new ComboBox
+            {
+                Location = new Point(0, currentY),
+                Size = new Size(720, 25),
+                Font = new Font("Segoe UI", 9),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                FlatStyle = FlatStyle.Flat
+            };
+            currentY += 30 + sectionSpacing;
+            
+            // Add Pollinations AI generation styles
+            _generationStyleComboBox.Items.AddRange(new object[]
+            {
+                "digital-art",
+                "anime",
+                "photographic",
+                "cinematic",
+                "3d-model",
+                "pixel-art",
+                "fantasy-art",
+                "neon-punk",
+                "isometric",
+                "low-poly",
+                "origami",
+                "modeling-compound",
+                "analog-film",
+                "enhance",
+                "cinematic-close-up"
+            });
+            _generationStyleComboBox.SelectedIndex = 0; // Default to digital-art
+            
+            // Action buttons section
             _generateButton = new Button
             {
                 Text = "Generate",
-                Location = new Point(480, 215),
-                Size = new Size(80, 30),
-                Font = new Font("Segoe UI", 9),
+                Location = new Point(420, currentY),
+                Size = new Size(90, 35),
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 BackColor = Color.FromArgb(0, 120, 215),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Cursor = Cursors.Hand
             };
             _generateButton.FlatAppearance.BorderSize = 0;
+            _generateButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 100, 195);
             _generateButton.Click += GenerateButton_Click;
             
-            // Status label
+            _retryButton = new Button
+            {
+                Text = "Retry",
+                Location = new Point(520, currentY),
+                Size = new Size(80, 35),
+                Font = new Font("Segoe UI", 9),
+                BackColor = Color.FromArgb(100, 100, 100),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Visible = true,
+                Enabled = false,
+                Cursor = Cursors.Hand
+            };
+            _retryButton.FlatAppearance.BorderSize = 0;
+            _retryButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(120, 120, 120);
+            _retryButton.Click += RetryButton_Click;
+            
+            currentY += 45 + spacing;
+            
+            // Status section
             _statusLabel = new Label
             {
                 Text = "Select an example or type your own prompt, then click Generate (Mouse wheel to zoom)",
-                Location = new Point(0, 220),
-                Size = new Size(450, 20),
+                Location = new Point(0, currentY),
+                Size = new Size(720, 20),
                 Font = new Font("Segoe UI", 8),
                 ForeColor = Color.FromArgb(100, 100, 100),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
+            currentY += 24;
             
-            // Connection status label
             _connectionStatusLabel = new Label
             {
                 Text = "● Not connected",
-                Location = new Point(0, 245),
+                Location = new Point(0, currentY),
                 Size = new Size(200, 20),
                 Font = new Font("Segoe UI", 8),
                 ForeColor = Color.FromArgb(150, 150, 150),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left
             };
+            currentY += 28;
             
-            // Progress bar
             _progressBar = new ProgressBar
             {
-                Location = new Point(0, 270),
-                Size = new Size(560, 23),
+                Location = new Point(0, currentY),
+                Size = new Size(720, 25),
                 Style = ProgressBarStyle.Marquee,
                 MarqueeAnimationSpeed = 30,
                 Visible = false,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
+            currentY += 40 + sectionSpacing;
+            
+            // Tile Information section
+            _tileInfoLabel = new Label
+            {
+                Text = "Tile Information:",
+                Location = new Point(0, currentY),
+                Size = new Size(200, 24),
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = Color.FromArgb(50, 50, 50)
+            };
+            currentY += 28;
+            
+            _tileDimensionsLabel = new Label
+            {
+                Text = "Dimensions: 1024 × 512 pixels",
+                Location = new Point(0, currentY),
+                Size = new Size(720, 20),
+                Font = new Font("Segoe UI", 9),
+                ForeColor = Color.FromArgb(70, 70, 70),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            currentY += 22;
+            
+            _tileAspectRatioLabel = new Label
+            {
+                Text = "Aspect Ratio: 2:1 (Isometric)",
+                Location = new Point(0, currentY),
+                Size = new Size(720, 20),
+                Font = new Font("Segoe UI", 9),
+                ForeColor = Color.FromArgb(70, 70, 70),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            currentY += 22;
+            
+            _tileFormatLabel = new Label
+            {
+                Text = "Format: PNG with Alpha Channel (Transparency)",
+                Location = new Point(0, currentY),
+                Size = new Size(720, 20),
+                Font = new Font("Segoe UI", 9),
+                ForeColor = Color.FromArgb(70, 70, 70),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            currentY += 22;
+            
+            _tileTemplateLabel = new Label
+            {
+                Text = "Template: Water.png (Diamond shape mask applied)",
+                Location = new Point(0, currentY),
+                Size = new Size(720, 20),
+                Font = new Font("Segoe UI", 9),
+                ForeColor = Color.FromArgb(70, 70, 70),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            currentY += 28 + sectionSpacing;
+            
+            // Image preview section label
+            Label previewLabel = new Label
+            {
+                Text = "Preview:",
+                Location = new Point(0, currentY),
+                Size = new Size(100, 24),
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = Color.FromArgb(50, 50, 50)
+            };
+            currentY += 28;
             
             // Image preview panel with scroll support (512x256 for 2:1 aspect ratio)
+            // Panel will be centered by CenterImagePreview() function
             _imagePanel = new Panel
             {
-                Location = new Point(0, 305),
+                Location = new Point(0, currentY),
                 Size = new Size(512, 256),
                 BorderStyle = BorderStyle.FixedSingle,
                 BackColor = Color.Black,
@@ -200,21 +352,43 @@ namespace Project9.Editor
             _imagePreview.MouseEnter += (s, e) => _imagePreview.Focus(); // Enable focus for mouse wheel
             _imagePreview.MouseWheel += ImagePreview_MouseWheel;
             _imagePanel.Controls.Add(_imagePreview);
+            currentY += 270 + spacing;
+            
+            // Load button (below preview)
+            _loadButton = new Button
+            {
+                Text = "Load Generated Image",
+                Location = new Point(0, currentY),
+                Size = new Size(200, 38),
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                BackColor = Color.FromArgb(0, 150, 0),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                Enabled = false,
+                Cursor = Cursors.Hand
+            };
+            _loadButton.FlatAppearance.BorderSize = 0;
+            _loadButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 130, 0);
+            _loadButton.Click += LoadButton_Click;
+            currentY += 50 + spacing;
             
             // Close button
             Button closeButton = new Button
             {
                 Text = "Close",
-                Location = new Point(480, 575),
-                Size = new Size(80, 30),
+                Location = new Point(520, currentY),
+                Size = new Size(80, 35),
                 DialogResult = DialogResult.OK,
                 Font = new Font("Segoe UI", 9),
-                BackColor = Color.FromArgb(200, 200, 200),
+                BackColor = Color.FromArgb(220, 220, 220),
                 ForeColor = Color.Black,
                 FlatStyle = FlatStyle.Flat,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Cursor = Cursors.Hand
             };
             closeButton.FlatAppearance.BorderSize = 0;
+            closeButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(200, 200, 200);
             closeButton.Click += (s, e) => this.Close();
             
             this.Controls.Add(titleLabel);
@@ -222,11 +396,21 @@ namespace Project9.Editor
             this.Controls.Add(_promptTextBox);
             this.Controls.Add(exampleLabel);
             this.Controls.Add(_examplePromptComboBox);
+            this.Controls.Add(generationStyleLabel);
+            this.Controls.Add(_generationStyleComboBox);
             this.Controls.Add(_generateButton);
+            this.Controls.Add(_retryButton);
             this.Controls.Add(_statusLabel);
             this.Controls.Add(_connectionStatusLabel);
             this.Controls.Add(_progressBar);
+            this.Controls.Add(_tileInfoLabel);
+            this.Controls.Add(_tileDimensionsLabel);
+            this.Controls.Add(_tileAspectRatioLabel);
+            this.Controls.Add(_tileFormatLabel);
+            this.Controls.Add(_tileTemplateLabel);
+            this.Controls.Add(previewLabel);
             this.Controls.Add(_imagePanel);
+            this.Controls.Add(_loadButton);
             this.Controls.Add(closeButton);
             this.AcceptButton = _generateButton;
             this.CancelButton = closeButton;
@@ -490,6 +674,8 @@ namespace Project9.Editor
             }
             
             _generateButton.Enabled = false;
+            _retryButton.Enabled = false; // Disable retry button during generation
+            _loadButton.Enabled = false; // Disable load button during generation
             
             // Dispose of previous images
             if (_imagePreview.Image != null && _imagePreview.Image != _originalImage)
@@ -514,24 +700,40 @@ namespace Project9.Editor
             try
             {
                 // Build the URL with the prompt (add timestamp to prevent caching)
-                // Add 2:1 isometric perspective and seamless requirements if not already in prompt
+                // Always add 2:1 isometric perspective and seamless on all 4 sides requirements
                 // The mask will enforce the diamond shape and transparency
                 // Use 1024x512 dimensions to match isometric tile format (2:1 ratio)
                 string enhancedPrompt;
                 string lowerPrompt = prompt.ToLower();
                 if ((lowerPrompt.Contains("2:1") || lowerPrompt.Contains("isometric")) && lowerPrompt.Contains("seamless"))
                 {
-                    // Prompt already includes requirements, just add technical specs
-                    enhancedPrompt = $"{prompt}, tile texture, 1024x512 pixels";
+                    // Prompt already includes some requirements, ensure it mentions all 4 sides
+                    if (!lowerPrompt.Contains("all 4 sides") && !lowerPrompt.Contains("four sides"))
+                    {
+                        enhancedPrompt = $"{prompt}, seamlessly tileable on all 4 sides, tile texture, 1024x512 pixels";
+                    }
+                    else
+                    {
+                        enhancedPrompt = $"{prompt}, tile texture, 1024x512 pixels";
+                    }
                 }
                 else
                 {
-                    // Add 2:1 isometric and seamless requirements
-                    enhancedPrompt = $"2:1 isometric top-down view, {prompt}, seamless tileable pattern, tile texture, 1024x512 pixels";
+                    // Add 2:1 isometric and seamless on all 4 sides requirements
+                    enhancedPrompt = $"2:1 isometric top-down view, {prompt}, seamlessly tileable on all 4 sides, tile texture, 1024x512 pixels";
                 }
-                string encodedPrompt = Uri.EscapeDataString(enhancedPrompt);
+                // Get selected generation style
+                string generationStyle = _generationStyleComboBox.SelectedItem?.ToString() ?? "digital-art";
+                
+                // Add generation style to the prompt
+                string styleEnhancedPrompt = $"{enhancedPrompt}, {generationStyle} style";
+                
+                string encodedPrompt = Uri.EscapeDataString(styleEnhancedPrompt);
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string url = $"https://image.pollinations.ai/prompt/{encodedPrompt}?width=1024&height=512&nologo=true&enhance=true&_t={timestamp}";
+                
+                // Build URL with generation style as model parameter
+                // Pollinations API uses 'model' parameter to specify the generation style
+                string url = $"https://image.pollinations.ai/prompt/{encodedPrompt}?width=1024&height=512&nologo=true&enhance=true&model={generationStyle}&_t={timestamp}";
                 
                 UpdateConnectionStatus(true, "Connected");
                 _statusLabel.Text = "Requesting image generation...";
@@ -591,6 +793,9 @@ namespace Project9.Editor
                             _statusLabel.Text = "Image generated successfully! (Mouse wheel to zoom)";
                             _statusLabel.ForeColor = Color.FromArgb(0, 150, 0);
                             UpdateConnectionStatus(true, "Connected - Success");
+                            
+                            // Enable Load button
+                            _loadButton.Enabled = true;
                         }
                     }
                     else
@@ -624,6 +829,64 @@ namespace Project9.Editor
             {
                 _generateButton.Enabled = true;
                 _progressBar.Visible = false;
+                // Show and enable retry button after generation attempt
+                _retryButton.Visible = true;
+                _retryButton.Enabled = true;
+            }
+        }
+        
+        private void RetryButton_Click(object? sender, EventArgs e)
+        {
+            // Reconnect and restart the generation process
+            // Reset connection status
+            UpdateConnectionStatus(false, "Reconnecting...");
+            _statusLabel.Text = "Reconnecting and restarting generation...";
+            _statusLabel.ForeColor = Color.FromArgb(0, 120, 215);
+            Application.DoEvents();
+            
+            // Dispose and recreate HttpClient to ensure fresh connection
+            try
+            {
+                _httpClient?.Dispose();
+            }
+            catch { }
+            
+            _httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(60)
+            };
+            
+            // Call the generate button click handler to restart the process
+            GenerateButton_Click(sender, e);
+        }
+        
+        private void LoadButton_Click(object? sender, EventArgs e)
+        {
+            if (_originalImage == null)
+            {
+                MessageBox.Show("No image to save. Please generate an image first.", "No Image", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Filter = "PNG files (*.png)|*.png|All files (*.*)|*.*";
+                dialog.Title = "Save Generated Tile Image";
+                dialog.FileName = "generated_tile.png";
+                dialog.DefaultExt = "png";
+                
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        _originalImage.Save(dialog.FileName, ImageFormat.Png);
+                        MessageBox.Show($"Image saved successfully to:\n{dialog.FileName}", "Save Image", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error saving image: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
             }
         }
         
