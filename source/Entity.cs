@@ -368,15 +368,9 @@ namespace Project9
 
             if (visible && _diamondTexture != null)
             {
-                // Adjust draw position based on Z height
-                Vector2 basePosition = _position;
-                if (_zHeight > 0)
-                {
-                    // In isometric, Z height moves the sprite up on screen
-                    basePosition.Y -= _zHeight * 0.5f; // Adjust this multiplier as needed
-                }
-                
-                Vector2 drawPosition = basePosition - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
+                // Draw sprite at base position (ground level), not adjusted for Z height
+                // Z height only affects the bounding box, not the sprite position
+                Vector2 drawPosition = _position - new Vector2(_diamondWidth / 2, _diamondHeight / 2);
                 // Use bounding box color for the diamond sprite to match the bounding box
                 // Use lower layerDepth (0.1) so entity sprite draws behind bounding box
                 spriteBatch.Draw(_diamondTexture, drawPosition, null, _boundingBoxColor, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0.1f);

@@ -1658,7 +1658,10 @@ namespace Project9.Editor
             var entitiesToDraw = new List<(object entity, float depth, string type, int index)>();
             
             // Collect bounding box faces for per-face sorting (only when bounding boxes are shown)
-            var boundingBoxFaces = new List<(PointF[] vertices, float depth, Color color)>();
+            // Structure: (vertices, objectDepth, faceZHeight, color)
+            // objectDepth = forward-most point of object (for object sorting)
+            // faceZHeight = Z height of face center (for face sorting within object)
+            var boundingBoxFaces = new List<(PointF[] vertices, float objectDepth, float faceZHeight, Color color)>();
             const float heightScale = 0.5f;
             
             // Add enemies
@@ -1767,8 +1770,16 @@ namespace Project9.Editor
                 }
             }
             
-            // Sort bounding box faces by depth (back to front)
-            boundingBoxFaces.Sort((a, b) => a.depth.CompareTo(b.depth));
+            // Sort bounding box faces: front-to-back by object, then top-to-bottom within object
+            // 1. Sort by object depth (ascending - lower = more forward, draw first)
+            // 2. Then by face Z height (descending - higher Z = top face, draw first within object)
+            boundingBoxFaces.Sort((a, b) =>
+            {
+                int objectCompare = a.objectDepth.CompareTo(b.objectDepth);
+                if (objectCompare != 0)
+                    return objectCompare; // Different objects: sort by forward-most depth (front-to-back)
+                return b.faceZHeight.CompareTo(a.faceZHeight); // Same object: sort by Z height (top-to-bottom)
+            });
             
             // Sort by isometric depth (back to front)
             entitiesToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
@@ -1844,7 +1855,7 @@ namespace Project9.Editor
             // Draw bounding box faces last (after everything else) if enabled
             if (_showBoundingBoxes && boundingBoxFaces.Count > 0)
             {
-                foreach (var (vertices, depth, color) in boundingBoxFaces)
+                foreach (var (vertices, objectDepth, faceZHeight, color) in boundingBoxFaces)
                 {
                     // Use the actual color from the entity, with opacity
                     int alpha = (int)(_boundingBoxOpacity * 255.0f);
@@ -1880,7 +1891,7 @@ namespace Project9.Editor
             // Draw bounding box faces last (after everything else) if enabled
             if (_showBoundingBoxes && boundingBoxFaces.Count > 0)
             {
-                foreach (var (vertices, depth, color) in boundingBoxFaces)
+                foreach (var (vertices, objectDepth, faceZHeight, color) in boundingBoxFaces)
                 {
                     // Use the actual color from the entity, with opacity
                     int alpha = (int)(_boundingBoxOpacity * 255.0f);
@@ -2038,23 +2049,11 @@ namespace Project9.Editor
         /// Extract all faces from a bounding box and add them to the face list for per-face sorting
         /// </summary>
         private void AddBoundingBoxFaces(float centerX, float centerY, float zHeight, float width, float height,
-            Color boxColor, List<(PointF[] vertices, float depth, Color color)> faceList, float heightScale)
+            Color boxColor, List<(PointF[] vertices, float objectDepth, float faceZHeight, Color color)> faceList, float heightScale)
         {
             float halfWidth = width / 2.0f;
             float halfHeight = height / 2.0f;
             float zOffsetY = zHeight * heightScale;
-            
-            // Calculate object's base depth (same formula as entity sorting)
-            float zOffsetYForDepth = zHeight * heightScale;
-            float topFaceCenterY = centerY - zOffsetYForDepth;
-            float objectBaseDepth = (centerX + topFaceCenterY) - (zHeight * 0.3f);
-            
-            // Add a unique offset based on position to ensure adjacent objects have distinct depths
-            // Use a hash of position to create a deterministic but unique offset
-            // Range: 0 to 0.01f - large enough to separate objects but small enough to not affect normal sorting
-            float positionHash = (centerX * 1000.0f + centerY * 1000.0f) % 10000.0f;
-            float uniqueOffset = (positionHash / 10000.0f) * 0.01f;
-            objectBaseDepth += uniqueOffset;
             
             // Calculate all 8 vertices
             PointF[] vertices = new PointF[8];
@@ -2071,35 +2070,41 @@ namespace Project9.Editor
             vertices[6] = new PointF(centerX, centerY + halfHeight - zOffsetY);
             vertices[7] = new PointF(centerX - halfWidth, centerY - zOffsetY);
             
-            // For each face, use a fixed offset based on face type
-            // These offsets are small (0.0001f increments) and only affect face order within the same object
-            // The unique offset ensures different objects have distinct base depths
-            // Bottom face (draw first, most back)
-            PointF[] bottomFace = new PointF[] { vertices[0], vertices[1], vertices[2], vertices[3] };
-            faceList.Add((bottomFace, objectBaseDepth + 0.0000f, boxColor));
+            // Calculate object's forward-most depth (minimum X+Y of all vertices)
+            // This is used to sort objects front-to-back
+            float objectForwardDepth = float.MaxValue;
+            foreach (var vertex in vertices)
+            {
+                float depth = vertex.X + vertex.Y;
+                if (depth < objectForwardDepth)
+                {
+                    objectForwardDepth = depth;
+                }
+            }
             
-            // Top face (draw last, most forward)
+            // Add faces with object depth and face Z height
+            // Top face (z = zHeight) - draw first within object
             PointF[] topFace = new PointF[] { vertices[4], vertices[5], vertices[6], vertices[7] };
-            faceList.Add((topFace, objectBaseDepth + 0.0005f, boxColor));
+            faceList.Add((topFace, objectForwardDepth, zHeight, boxColor));
             
-            // Side faces
+            // Side faces (z = 0 to zHeight, use average Z)
             PointF[] side1 = new PointF[] { vertices[0], vertices[1], vertices[5], vertices[4] };
-            faceList.Add((side1, objectBaseDepth + 0.0001f, boxColor));
+            faceList.Add((side1, objectForwardDepth, zHeight * 0.5f, boxColor));
             
             PointF[] side2 = new PointF[] { vertices[1], vertices[2], vertices[6], vertices[5] };
-            faceList.Add((side2, objectBaseDepth + 0.0002f, boxColor));
+            faceList.Add((side2, objectForwardDepth, zHeight * 0.5f, boxColor));
             
             PointF[] side3 = new PointF[] { vertices[2], vertices[3], vertices[7], vertices[6] };
-            faceList.Add((side3, objectBaseDepth + 0.0003f, boxColor));
+            faceList.Add((side3, objectForwardDepth, zHeight * 0.5f, boxColor));
             
             PointF[] side4 = new PointF[] { vertices[3], vertices[0], vertices[4], vertices[7] };
-            faceList.Add((side4, objectBaseDepth + 0.0004f, boxColor));
+            faceList.Add((side4, objectForwardDepth, zHeight * 0.5f, boxColor));
+            
+            // Bottom face (z = 0) - draw last within object
+            PointF[] bottomFace = new PointF[] { vertices[0], vertices[1], vertices[2], vertices[3] };
+            faceList.Add((bottomFace, objectForwardDepth, 0.0f, boxColor));
         }
         
-        /// <summary>
-        /// Calculate depth for a face by finding the most forward point's (X+Y) value
-        /// This directly uses the face's position in isometric space for sorting
-        /// </summary>
         private void DrawCollisionCells(Graphics g)
         {
             const float halfWidth = 32.0f;  // 64/2 = 32

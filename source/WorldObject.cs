@@ -124,7 +124,7 @@ namespace Project9
             }
         }
         
-        private void DrawBoundingBox3D(SpriteBatch spriteBatch, Texture2D lineTexture)
+        public void DrawBoundingBox3D(SpriteBatch spriteBatch, Texture2D lineTexture)
         {
             // Calculate isometric diamond corners
             float halfWidth = _diamondWidth / 2.0f;

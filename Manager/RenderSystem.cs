@@ -179,9 +179,6 @@ namespace Project9
             var entitiesToDraw = new List<(Entity? entity, float depth, string type)>();
             var worldObjectsToDraw = new List<(WorldObject worldObject, float depth)>();
             
-            // Collect bounding box faces for per-face sorting (only when bounding boxes are shown)
-            var boundingBoxFaces = new List<(Entity? entity, Vector2[] vertices, float depth, Color color)>();
-            
             // Height scale for isometric Z projection (matches rendering)
             const float heightScale = 0.5f;
             
@@ -197,11 +194,7 @@ namespace Project9
                     float depth = (camera.Position.X + topFaceCenterY) - (camera.ZHeight * 0.3f);
                     entitiesToDraw.Add((camera, depth, "camera"));
                     
-                    // If bounding boxes are shown, extract faces for per-face sorting
-                    if (_showBoundingBoxes && camera.ZHeight > 0)
-                    {
-                        AddBoundingBoxFaces(camera, boundingBoxFaces, heightScale);
-                    }
+                    // Bounding boxes are drawn separately as wireframe only
                 }
             }
             
@@ -222,11 +215,7 @@ namespace Project9
                     float depth = (enemy.Position.X + topFaceCenterY) - (enemy.ZHeight * 0.3f);
                     entitiesToDraw.Add((enemy, depth, "enemy"));
                     
-                    // If bounding boxes are shown, extract faces for per-face sorting
-                    if (_showBoundingBoxes && enemy.ZHeight > 0)
-                    {
-                        AddBoundingBoxFaces(enemy, boundingBoxFaces, heightScale);
-                    }
+                    // Bounding boxes are drawn separately as wireframe only
                 }
             }
             
@@ -243,11 +232,7 @@ namespace Project9
                     float depth = (weaponPickup.Position.X + topFaceCenterY) - (weaponPickup.ZHeight * 0.3f);
                     entitiesToDraw.Add((weaponPickup, depth, "weapon"));
                     
-                    // If bounding boxes are shown, extract faces for per-face sorting
-                    if (_showBoundingBoxes && weaponPickup.ZHeight > 0)
-                    {
-                        AddBoundingBoxFaces(weaponPickup, boundingBoxFaces, heightScale);
-                    }
+                    // Bounding boxes are drawn separately as wireframe only
                 }
             }
             
@@ -258,11 +243,7 @@ namespace Project9
             float playerDepth = (entityManager.Player.Position.X + playerTopFaceCenterY) - (entityManager.Player.ZHeight * 0.3f);
             entitiesToDraw.Add((entityManager.Player, playerDepth, "player"));
             
-            // If bounding boxes are shown, extract faces for per-face sorting
-            if (_showBoundingBoxes && entityManager.Player.ZHeight > 0)
-            {
-                AddBoundingBoxFaces(entityManager.Player, boundingBoxFaces, heightScale);
-            }
+            // Bounding boxes are drawn separately as wireframe only
             
             // Add world objects (furniture)
             foreach (var worldObject in _map.WorldObjects)
@@ -279,16 +260,9 @@ namespace Project9
                     float depth = (worldObject.Position.X + topFaceCenterY) - (worldObject.ZHeight * 0.3f);
                     worldObjectsToDraw.Add((worldObject, depth));
                     
-                    // If bounding boxes are shown, extract faces for per-face sorting
-                    if (_showBoundingBoxes && worldObject.ZHeight > 0)
-                    {
-                        AddWorldObjectBoundingBoxFaces(worldObject, boundingBoxFaces, heightScale);
-                    }
+                    // Bounding boxes are drawn separately as wireframe only
                 }
             }
-            
-            // Sort bounding box faces by depth (back to front)
-            boundingBoxFaces.Sort((a, b) => a.depth.CompareTo(b.depth));
             
             // Sort by isometric depth (back to front)
             entitiesToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
@@ -332,7 +306,7 @@ namespace Project9
                 if (entity == null)
                     continue;
                     
-                // Set bounding box visibility to false since we're drawing faces separately
+                // Set bounding box visibility to false since we're drawing them separately
                 entity.ShowBoundingBox = false;
                 
                 if (type == "camera")
@@ -506,18 +480,34 @@ namespace Project9
 
             _spriteBatch.End();
             
-            // Draw bounding box faces last (after everything else) if enabled
-            if (_showBoundingBoxes && boundingBoxFaces.Count > 0)
+            // Draw bounding box wireframe lines last (after everything else) if enabled
+            // Only draw lines, no filled faces
+            if (_showBoundingBoxes)
             {
                 _spriteBatch.Begin(
                     transformMatrix: _camera.GetTransform(),
                     samplerState: SamplerState.PointClamp
                 );
                 
-                Texture2D? lineTexture = _whiteTexture;
-                foreach (var (entity, vertices, depth, color) in boundingBoxFaces)
+                // Draw bounding boxes for all entities (wireframe only)
+                foreach (var (drawable, depth, type) in allToDraw)
                 {
-                    DrawBoundingBoxFace(_spriteBatch, lineTexture, vertices, color);
+                    var entity = drawable as Entity;
+                    if (entity != null && entity.ZHeight > 0)
+                    {
+                        entity.ShowBoundingBox = true;
+                        entity.DrawBoundingBox3D(_spriteBatch);
+                    }
+                }
+                
+                // Draw bounding boxes for world objects (wireframe only)
+                Texture2D? lineTexture = _whiteTexture;
+                foreach (var (worldObject, depth) in worldObjectsToDraw)
+                {
+                    if (worldObject.ZHeight > 0 && lineTexture != null)
+                    {
+                        worldObject.DrawBoundingBox3D(_spriteBatch, lineTexture);
+                    }
                 }
                 
                 _spriteBatch.End();
