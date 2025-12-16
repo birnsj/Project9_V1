@@ -2114,7 +2114,7 @@
     },
     {
       "name": "",
-      "x": 352,
+      "x": 32,
       "y": 4848,
       "attackRange": 50,
       "detectionRange": 200,
@@ -2133,7 +2133,7 @@
       "rotation": 0,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 256,
+      "zHeight": 128,
       "boundingBoxColorR": 69,
       "boundingBoxColorG": 224,
       "boundingBoxColorB": 31,
@@ -2408,15 +2408,15 @@
     },
     {
       "name": "Table 2",
-      "x": 0,
-      "y": 4608,
+      "x": -32,
+      "y": 4816,
       "diamondWidth": 128,
       "diamondHeight": 64,
-      "zHeight": 128,
+      "zHeight": 64,
       "boundingBoxColorR": 255,
       "boundingBoxColorG": 128,
       "boundingBoxColorB": 0,
-      "boundingBoxOpacity": 0.3
+      "boundingBoxOpacity": 1
     },
     {
       "name": "Desk 2",
@@ -2577,8 +2577,8 @@
   ],
   "player": {
     "name": "Jeff",
-    "x": -224,
-    "y": 4720,
+    "x": -96,
+    "y": 4784,
     "walkSpeed": 75,
     "runSpeed": 150,
     "maxHealth": 100,

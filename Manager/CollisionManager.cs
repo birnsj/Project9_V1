@@ -96,7 +96,7 @@ namespace Project9
                     if (collisionData?.Cells != null)
                     {
                         _collisionCells = collisionData.Cells;
-                        Console.WriteLine($"[CollisionManager] Loaded {_collisionCells.Count} collision cells");
+                        LogOverlay.Log($"[CollisionManager] Loaded {_collisionCells.Count} collision cells", LogLevel.Info);
                         
                         // Build spatial hash grid for fast collision lookups
                         BuildCollisionGrid();
@@ -104,7 +104,7 @@ namespace Project9
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[CollisionManager] Error loading collision cells: {ex.Message}");
+                    LogOverlay.Log($"[CollisionManager] Error loading collision cells: {ex.Message}", LogLevel.Error);
                 }
             }
         }
@@ -130,7 +130,7 @@ namespace Project9
                 _collisionGrid[key].Add(cell);
             }
             
-            Console.WriteLine($"[CollisionManager] Built collision grid with {_collisionGrid.Count} regions");
+            LogOverlay.Log($"[CollisionManager] Built collision grid with {_collisionGrid.Count} regions", LogLevel.Info);
         }
 
         /// <summary>
@@ -959,7 +959,7 @@ namespace Project9
             _staticCollisionCache?.Clear();
             _cacheHits = 0;
             _cacheMisses = 0;
-            Console.WriteLine("[CollisionManager] Collision cache cleared");
+            LogOverlay.Log("[CollisionManager] Collision cache cleared", LogLevel.Debug);
         }
         
         /// <summary>

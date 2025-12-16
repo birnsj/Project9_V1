@@ -20,6 +20,9 @@
     <Compile Remove="Project9.Editor\**" />
     <EmbeddedResource Remove="Project9.Editor\**" />
     <None Remove="Project9.Editor\**" />
+    <Compile Remove="Project9.Tests\**" />
+    <EmbeddedResource Remove="Project9.Tests\**" />
+    <None Remove="Project9.Tests\**" />
   </ItemGroup>
 
   <ItemGroup>

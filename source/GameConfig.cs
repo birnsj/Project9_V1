@@ -158,6 +158,32 @@ namespace Project9
         
         /// <summary>End offset for line of sight checks (pixels)</summary>
         public const float LineOfSightEndOffset = 10.0f;
+        
+        // ===== COMBAT & INTERACTION =====
+        /// <summary>Click detection radius for targeting enemies (pixels)</summary>
+        public const float ClickDetectionRadius = 40.0f;
+        
+        /// <summary>Melee attack range in pixels</summary>
+        public const float MeleeAttackRange = 80.0f;
+        
+        /// <summary>Projectile lifetime in seconds</summary>
+        public const float ProjectileLifetime = 0.5f;
+        
+        /// <summary>Very close range threshold for projectile/melee switching (pixels)</summary>
+        public const float VeryCloseRange = 30.0f;
+        
+        /// <summary>Weapon pickup radius in pixels</summary>
+        public const float PickupRadius = 40.0f;
+        
+        /// <summary>Projectile hit detection radius in pixels</summary>
+        public const float HitRadius = 20.0f;
+        
+        // ===== UI & RENDERING =====
+        /// <summary>Hover radius for name tag display (pixels)</summary>
+        public const float HoverRadius = 50.0f;
+        
+        /// <summary>Name tag vertical offset above entity (pixels)</summary>
+        public const float NameTagOffsetY = -50.0f;
     }
 }
 

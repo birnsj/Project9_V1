@@ -1657,19 +1657,46 @@ namespace Project9.Editor
             // Collect all entities for isometric depth sorting
             var entitiesToDraw = new List<(object entity, float depth, string type, int index)>();
             
+            // Collect bounding box faces for per-face sorting (only when bounding boxes are shown)
+            var boundingBoxFaces = new List<(PointF[] vertices, float depth, Color color)>();
+            const float heightScale = 0.5f;
+            
             // Add enemies
             for (int i = 0; i < _mapData.MapData.Enemies.Count; i++)
             {
                 var enemy = _mapData.MapData.Enemies[i];
-                float depth = CalculateIsometricDepth(enemy.X, enemy.Y, enemy.ZHeight);
+                // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                float zOffsetY = enemy.ZHeight * heightScale;
+                float topFaceCenterY = enemy.Y - zOffsetY;
+                float depth = (enemy.X + topFaceCenterY) - (enemy.ZHeight * 0.3f);
                 entitiesToDraw.Add((enemy, depth, "enemy", i));
+                
+                // Extract bounding box faces for per-face sorting
+                if (_showBoundingBoxes && enemy.ZHeight > 0)
+                {
+                    AddBoundingBoxFaces(enemy.X, enemy.Y, enemy.ZHeight, enemy.DiamondWidth, enemy.DiamondHeight, 
+                        Color.FromArgb(enemy.BoundingBoxColorR, enemy.BoundingBoxColorG, enemy.BoundingBoxColorB),
+                        boundingBoxFaces, heightScale);
+                }
             }
             
             // Add player
             if (_mapData.MapData.Player != null)
             {
-                float depth = CalculateIsometricDepth(_mapData.MapData.Player.X, _mapData.MapData.Player.Y, _mapData.MapData.Player.ZHeight);
+                // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                float zOffsetY = _mapData.MapData.Player.ZHeight * heightScale;
+                float topFaceCenterY = _mapData.MapData.Player.Y - zOffsetY;
+                float depth = (_mapData.MapData.Player.X + topFaceCenterY) - (_mapData.MapData.Player.ZHeight * 0.3f);
                 entitiesToDraw.Add((_mapData.MapData.Player, depth, "player", 0));
+                
+                // Extract bounding box faces for per-face sorting
+                if (_showBoundingBoxes && _mapData.MapData.Player.ZHeight > 0)
+                {
+                    AddBoundingBoxFaces(_mapData.MapData.Player.X, _mapData.MapData.Player.Y, _mapData.MapData.Player.ZHeight,
+                        _mapData.MapData.Player.DiamondWidth, _mapData.MapData.Player.DiamondHeight,
+                        Color.FromArgb(_mapData.MapData.Player.BoundingBoxColorR, _mapData.MapData.Player.BoundingBoxColorG, _mapData.MapData.Player.BoundingBoxColorB),
+                        boundingBoxFaces, heightScale);
+                }
             }
             else
             {
@@ -1681,8 +1708,19 @@ namespace Project9.Editor
             for (int i = 0; i < _mapData.MapData.Cameras.Count; i++)
             {
                 var camera = _mapData.MapData.Cameras[i];
-                float depth = CalculateIsometricDepth(camera.X, camera.Y, camera.ZHeight);
+                // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                float zOffsetY = camera.ZHeight * heightScale;
+                float topFaceCenterY = camera.Y - zOffsetY;
+                float depth = (camera.X + topFaceCenterY) - (camera.ZHeight * 0.3f);
                 entitiesToDraw.Add((camera, depth, "camera", i));
+                
+                // Extract bounding box faces for per-face sorting
+                if (_showBoundingBoxes && camera.ZHeight > 0)
+                {
+                    AddBoundingBoxFaces(camera.X, camera.Y, camera.ZHeight, camera.DiamondWidth, camera.DiamondHeight,
+                        Color.FromArgb(camera.BoundingBoxColorR, camera.BoundingBoxColorG, camera.BoundingBoxColorB),
+                        boundingBoxFaces, heightScale);
+                }
             }
             
             // Add weapons
@@ -1691,8 +1729,18 @@ namespace Project9.Editor
                 for (int i = 0; i < _mapData.MapData.Weapons.Count; i++)
                 {
                     var weapon = _mapData.MapData.Weapons[i];
-                    float depth = CalculateIsometricDepth(weapon.X, weapon.Y, weapon.ZHeight);
+                    // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                    float zOffsetY = weapon.ZHeight * heightScale;
+                    float topFaceCenterY = weapon.Y - zOffsetY;
+                    float depth = (weapon.X + topFaceCenterY) - (weapon.ZHeight * 0.3f);
                     entitiesToDraw.Add((weapon, depth, "weapon", i));
+                    
+                    // Extract bounding box faces for per-face sorting
+                    if (_showBoundingBoxes && weapon.ZHeight > 0)
+                    {
+                        AddBoundingBoxFaces(weapon.X, weapon.Y, weapon.ZHeight, 24.0f, 12.0f,
+                            Color.Cyan, boundingBoxFaces, heightScale);
+                    }
                 }
             }
             
@@ -1702,15 +1750,30 @@ namespace Project9.Editor
                 for (int i = 0; i < _mapData.MapData.WorldObjects.Count; i++)
                 {
                     var worldObject = _mapData.MapData.WorldObjects[i];
-                    float depth = CalculateIsometricDepth(worldObject.X, worldObject.Y, worldObject.ZHeight);
+                    // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                    float zOffsetY = worldObject.ZHeight * heightScale;
+                    float topFaceCenterY = worldObject.Y - zOffsetY;
+                    float depth = (worldObject.X + topFaceCenterY) - (worldObject.ZHeight * 0.3f);
                     entitiesToDraw.Add((worldObject, depth, "worldObject", i));
+                    
+                    // Extract bounding box faces for per-face sorting
+                    if (_showBoundingBoxes && worldObject.ZHeight > 0)
+                    {
+                        AddBoundingBoxFaces(worldObject.X, worldObject.Y, worldObject.ZHeight,
+                            worldObject.DiamondWidth, worldObject.DiamondHeight,
+                            Color.FromArgb(worldObject.BoundingBoxColorR, worldObject.BoundingBoxColorG, worldObject.BoundingBoxColorB),
+                            boundingBoxFaces, heightScale);
+                    }
                 }
             }
+            
+            // Sort bounding box faces by depth (back to front)
+            boundingBoxFaces.Sort((a, b) => a.depth.CompareTo(b.depth));
             
             // Sort by isometric depth (back to front)
             entitiesToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
             
-            // Draw entities in sorted order
+            // Draw entities in sorted order first (sprites behind bounding boxes)
             foreach (var (entity, depth, type, index) in entitiesToDraw)
             {
                 if (type == "enemy")
@@ -1754,7 +1817,7 @@ namespace Project9.Editor
                     }
                 }
             }
-
+            
             // Draw grids from smallest to largest (so larger grids overlay smaller ones)
             // Highlight the grid that matches the current snap size
             if (_showGrid32x16)
@@ -1777,6 +1840,33 @@ namespace Project9.Editor
             {
                 DrawGrid1024x512(g, _gridSnapWidth == 1024.0f);
             }
+            
+            // Draw bounding box faces last (after everything else) if enabled
+            if (_showBoundingBoxes && boundingBoxFaces.Count > 0)
+            {
+                foreach (var (vertices, depth, color) in boundingBoxFaces)
+                {
+                    // Use the actual color from the entity, with opacity
+                    int alpha = (int)(_boundingBoxOpacity * 255.0f);
+                    Color fillColor = Color.FromArgb(alpha, color);
+                    Color outlineColor = color;
+                    
+                    using (SolidBrush fillBrush = new SolidBrush(fillColor))
+                    {
+                        g.FillPolygon(fillBrush, vertices);
+                    }
+                    
+                    using (Pen boxPen = new Pen(outlineColor, 3.0f))
+                    {
+                        // Draw outline
+                        for (int i = 0; i < vertices.Length; i++)
+                        {
+                            int next = (i + 1) % vertices.Length;
+                            g.DrawLine(boxPen, vertices[i], vertices[next]);
+                        }
+                    }
+                }
+            }
 
             // Draw collision cells
             DrawCollisionCells(g);
@@ -1785,6 +1875,33 @@ namespace Project9.Editor
             if (_collisionMode && _collisionHoverPosition.HasValue && !_isDragging)
             {
                 DrawCollisionHoverPreview(g, _collisionHoverPosition.Value);
+            }
+            
+            // Draw bounding box faces last (after everything else) if enabled
+            if (_showBoundingBoxes && boundingBoxFaces.Count > 0)
+            {
+                foreach (var (vertices, depth, color) in boundingBoxFaces)
+                {
+                    // Use the actual color from the entity, with opacity
+                    int alpha = (int)(_boundingBoxOpacity * 255.0f);
+                    Color fillColor = Color.FromArgb(alpha, color);
+                    Color outlineColor = color;
+                    
+                    using (SolidBrush fillBrush = new SolidBrush(fillColor))
+                    {
+                        g.FillPolygon(fillBrush, vertices);
+                    }
+                    
+                    using (Pen boxPen = new Pen(outlineColor, 3.0f))
+                    {
+                        // Draw outline
+                        for (int i = 0; i < vertices.Length; i++)
+                        {
+                            int next = (i + 1) % vertices.Length;
+                            g.DrawLine(boxPen, vertices[i], vertices[next]);
+                        }
+                    }
+                }
             }
 
             // Restore original transform
@@ -1917,6 +2034,72 @@ namespace Project9.Editor
             }
         }
 
+        /// <summary>
+        /// Extract all faces from a bounding box and add them to the face list for per-face sorting
+        /// </summary>
+        private void AddBoundingBoxFaces(float centerX, float centerY, float zHeight, float width, float height,
+            Color boxColor, List<(PointF[] vertices, float depth, Color color)> faceList, float heightScale)
+        {
+            float halfWidth = width / 2.0f;
+            float halfHeight = height / 2.0f;
+            float zOffsetY = zHeight * heightScale;
+            
+            // Calculate object's base depth (same formula as entity sorting)
+            float zOffsetYForDepth = zHeight * heightScale;
+            float topFaceCenterY = centerY - zOffsetYForDepth;
+            float objectBaseDepth = (centerX + topFaceCenterY) - (zHeight * 0.3f);
+            
+            // Add a unique offset based on position to ensure adjacent objects have distinct depths
+            // Use a hash of position to create a deterministic but unique offset
+            // Range: 0 to 0.01f - large enough to separate objects but small enough to not affect normal sorting
+            float positionHash = (centerX * 1000.0f + centerY * 1000.0f) % 10000.0f;
+            float uniqueOffset = (positionHash / 10000.0f) * 0.01f;
+            objectBaseDepth += uniqueOffset;
+            
+            // Calculate all 8 vertices
+            PointF[] vertices = new PointF[8];
+            
+            // Bottom face vertices (z = 0)
+            vertices[0] = new PointF(centerX, centerY - halfHeight);
+            vertices[1] = new PointF(centerX + halfWidth, centerY);
+            vertices[2] = new PointF(centerX, centerY + halfHeight);
+            vertices[3] = new PointF(centerX - halfWidth, centerY);
+            
+            // Top face vertices (z = zHeight)
+            vertices[4] = new PointF(centerX, centerY - halfHeight - zOffsetY);
+            vertices[5] = new PointF(centerX + halfWidth, centerY - zOffsetY);
+            vertices[6] = new PointF(centerX, centerY + halfHeight - zOffsetY);
+            vertices[7] = new PointF(centerX - halfWidth, centerY - zOffsetY);
+            
+            // For each face, use a fixed offset based on face type
+            // These offsets are small (0.0001f increments) and only affect face order within the same object
+            // The unique offset ensures different objects have distinct base depths
+            // Bottom face (draw first, most back)
+            PointF[] bottomFace = new PointF[] { vertices[0], vertices[1], vertices[2], vertices[3] };
+            faceList.Add((bottomFace, objectBaseDepth + 0.0000f, boxColor));
+            
+            // Top face (draw last, most forward)
+            PointF[] topFace = new PointF[] { vertices[4], vertices[5], vertices[6], vertices[7] };
+            faceList.Add((topFace, objectBaseDepth + 0.0005f, boxColor));
+            
+            // Side faces
+            PointF[] side1 = new PointF[] { vertices[0], vertices[1], vertices[5], vertices[4] };
+            faceList.Add((side1, objectBaseDepth + 0.0001f, boxColor));
+            
+            PointF[] side2 = new PointF[] { vertices[1], vertices[2], vertices[6], vertices[5] };
+            faceList.Add((side2, objectBaseDepth + 0.0002f, boxColor));
+            
+            PointF[] side3 = new PointF[] { vertices[2], vertices[3], vertices[7], vertices[6] };
+            faceList.Add((side3, objectBaseDepth + 0.0003f, boxColor));
+            
+            PointF[] side4 = new PointF[] { vertices[3], vertices[0], vertices[4], vertices[7] };
+            faceList.Add((side4, objectBaseDepth + 0.0004f, boxColor));
+        }
+        
+        /// <summary>
+        /// Calculate depth for a face by finding the most forward point's (X+Y) value
+        /// This directly uses the face's position in isometric space for sorting
+        /// </summary>
         private void DrawCollisionCells(Graphics g)
         {
             const float halfWidth = 32.0f;  // 64/2 = 32
@@ -2510,11 +2693,11 @@ namespace Project9.Editor
                 g.DrawPolygon(pen, diamondPoints);
             }
             
-            // Draw bounding box if enabled
-            if (_showBoundingBoxes)
-            {
-                DrawBoundingBox3D(g, centerX, centerY, enemy.ZHeight, enemy.DiamondWidth, enemy.DiamondHeight, 64.0f, boxColor);
-            }
+            // Bounding boxes are now drawn separately via per-face sorting, so skip here
+            // if (_showBoundingBoxes)
+            // {
+            //     DrawBoundingBox3D(g, centerX, centerY, enemy.ZHeight, enemy.DiamondWidth, enemy.DiamondHeight, 64.0f, boxColor);
+            // }
             
             // Draw sight cone preview - only if ShowEnemyCones is enabled
             if (_showEnemyCones)
@@ -2625,10 +2808,11 @@ namespace Project9.Editor
             }
             
             // Draw bounding box if enabled
-            if (_showBoundingBoxes)
-            {
-                DrawBoundingBox3D(g, centerX, centerY, player.ZHeight, player.DiamondWidth, player.DiamondHeight, 64.0f, boxColor);
-            }
+            // Bounding boxes are now drawn separately via per-face sorting
+            // if (_showBoundingBoxes)
+            // {
+            //     DrawBoundingBox3D(g, centerX, centerY, player.ZHeight, player.DiamondWidth, player.DiamondHeight, 64.0f, boxColor);
+            // }
             
             // Draw label above the player - use name from JSON if available
             string label;
@@ -2765,10 +2949,11 @@ namespace Project9.Editor
             }
             
             // Draw bounding box if enabled
-            if (_showBoundingBoxes)
-            {
-                DrawBoundingBox3D(g, centerX, centerY, worldObject.ZHeight, worldObject.DiamondWidth, worldObject.DiamondHeight, 64.0f, boxColor);
-            }
+            // Bounding boxes are now drawn separately via per-face sorting
+            // if (_showBoundingBoxes)
+            // {
+            //     DrawBoundingBox3D(g, centerX, centerY, worldObject.ZHeight, worldObject.DiamondWidth, worldObject.DiamondHeight, 64.0f, boxColor);
+            // }
             
             // Draw label above the world object - use name from JSON if available, otherwise use type and index
             string label;
@@ -2838,8 +3023,9 @@ namespace Project9.Editor
             // Draw bounding box if enabled
             if (_showBoundingBoxes)
             {
-                Color boxColor = Color.FromArgb(camera.BoundingBoxColorR, camera.BoundingBoxColorG, camera.BoundingBoxColorB);
-                DrawBoundingBox3D(g, centerX, centerY, camera.ZHeight, camera.DiamondWidth, camera.DiamondHeight, 64.0f, boxColor);
+                // Bounding boxes are now drawn separately via per-face sorting
+                // Color boxColor = Color.FromArgb(camera.BoundingBoxColorR, camera.BoundingBoxColorG, camera.BoundingBoxColorB);
+                // DrawBoundingBox3D(g, centerX, centerY, camera.ZHeight, camera.DiamondWidth, camera.DiamondHeight, 64.0f, boxColor);
             }
             
             // Draw sight cone preview - only if ShowCameraCones is enabled

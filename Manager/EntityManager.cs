@@ -88,7 +88,7 @@ namespace Project9
                     Vector2 enemyPosition = new Vector2(enemyData.X, enemyData.Y);
                     _enemies.Add(new Enemy(enemyPosition, enemyData));
                 }
-                Console.WriteLine($"[EntityManager] Loaded {_enemies.Count} enemies");
+                LogOverlay.Log($"[EntityManager] Loaded {_enemies.Count} enemies", LogLevel.Info);
             }
         }
 
@@ -105,7 +105,7 @@ namespace Project9
                 {
                     _cameras.Add(new SecurityCamera(cameraData));
                 }
-                Console.WriteLine($"[EntityManager] Loaded {_cameras.Count} cameras");
+                LogOverlay.Log($"[EntityManager] Loaded {_cameras.Count} cameras", LogLevel.Info);
             }
         }
 
@@ -146,7 +146,7 @@ namespace Project9
                     Vector2 weaponPosition = new Vector2(weaponData.X, weaponData.Y);
                     _weaponPickups.Add(new WeaponPickup(weaponPosition, weapon));
                 }
-                Console.WriteLine($"[EntityManager] Loaded {_weaponPickups.Count} weapons");
+                LogOverlay.Log($"[EntityManager] Loaded {_weaponPickups.Count} weapons", LogLevel.Info);
             }
         }
 
@@ -203,6 +203,28 @@ namespace Project9
             // Track if player is following cursor
             _isFollowingCursor = followPosition.HasValue;
             
+            UpdatePlayer(followPosition, deltaTime);
+            CheckWeaponPickups();
+            CheckPendingAttack();
+            CheckAutoAttack();
+            UpdateProjectiles(deltaTime);
+            
+            bool anyCameraDetecting = UpdateCameras(deltaTime);
+            UpdateAlarmSystem(anyCameraDetecting, deltaTime);
+            
+            Vector2 playerPosition = _player.Position;
+            bool playerIsSneaking = _player.IsSneaking;
+            UpdateEnemies(playerPosition, playerIsSneaking, deltaTime);
+            
+            _pathfindingStopwatch.Stop();
+            _lastPathfindingTimeMs = (float)_pathfindingStopwatch.Elapsed.TotalMilliseconds;
+        }
+        
+        /// <summary>
+        /// Update player movement and state
+        /// </summary>
+        private void UpdatePlayer(Vector2? followPosition, float deltaTime)
+        {
             // Determine which enemy the player is in combat with (if any)
             Enemy? combatEnemy = GetEnemyInCombat();
             
@@ -215,12 +237,12 @@ namespace Project9
             {
                 // Only check collision with the enemy in combat
                 combatEnemyList = new List<Enemy> { combatEnemy };
-                playerCollisionCheck = (pos) => _collisionManager.CheckCollision(pos, combatEnemyList);
+                playerCollisionCheck = (pos) => _collisionManager!.CheckCollision(pos, combatEnemyList);
             }
             else
             {
                 // Not in combat - only check terrain collision (no enemy collision)
-                playerCollisionCheck = (pos) => _collisionManager.CheckCollision(pos, false);
+                playerCollisionCheck = (pos) => _collisionManager!.CheckCollision(pos, false);
             }
             
             // Update player movement with CollisionManager for perfect collision resolution
@@ -231,7 +253,7 @@ namespace Project9
                     followPosition, 
                     deltaTime, 
                     playerCollisionCheck, 
-                    (from, to) => _collisionManager.IsLineOfSightBlocked(from, to),
+                    (from, to) => _collisionManager!.IsLineOfSightBlocked(from, to),
                     _collisionManager,
                     combatEnemyList
                 );
@@ -264,19 +286,15 @@ namespace Project9
             {
                 _activePathfindingCount++;
             }
-
-            // Check for weapon pickups
-            CheckWeaponPickups();
-            
-            // Check if player reached attack target and attack if in range
-            CheckPendingAttack();
-            CheckAutoAttack(); // Check if player should auto-attack while moving
-            
-            // Update projectiles
-            UpdateProjectiles(deltaTime);
-
-            // Update all cameras first (they can alert enemies)
+        }
+        
+        /// <summary>
+        /// Update all cameras and return whether any camera is detecting the player
+        /// </summary>
+        private bool UpdateCameras(float deltaTime)
+        {
             bool anyCameraDetecting = false;
+            
             foreach (var camera in _cameras)
             {
                 // Only update if camera is alive
@@ -288,22 +306,25 @@ namespace Project9
                     _player.Position,
                     deltaTime,
                     _player.IsSneaking,
-                    (from, to) => _collisionManager.IsLineOfSightBlocked(from, to),
+                    (from, to) => _collisionManager!.IsLineOfSightBlocked(from, to),
                     _enemies
                 );
                 
                 // Check if camera is currently detecting player (in sight cone with line of sight)
-                if (camera.IsAlive && camera.IsCurrentlyDetecting(_player.Position, _player.IsSneaking, (from, to) => _collisionManager.IsLineOfSightBlocked(from, to)))
+                if (camera.IsAlive && camera.IsCurrentlyDetecting(_player.Position, _player.IsSneaking, (from, to) => _collisionManager!.IsLineOfSightBlocked(from, to)))
                 {
                     anyCameraDetecting = true;
                 }
             }
             
-            // Cache player position for distance calculations (avoid repeated property access)
-            Vector2 playerPosition = _player.Position;
-            bool playerIsSneaking = _player.IsSneaking;
-            
-            // Handle alarm state
+            return anyCameraDetecting;
+        }
+        
+        /// <summary>
+        /// Update alarm system based on camera detection
+        /// </summary>
+        private void UpdateAlarmSystem(bool anyCameraDetecting, float deltaTime)
+        {
             if (anyCameraDetecting)
             {
                 // Camera currently detecting player - start/reset alarm timer
@@ -335,7 +356,7 @@ namespace Project9
                             float effectiveRangeSquared = effectiveRange * effectiveRange;
                             
                             bool inRange = distanceSquared <= effectiveRangeSquared;
-                            bool hasLineOfSight = inRange && !_collisionManager.IsLineOfSightBlocked(enemy.Position, _player.Position, enemy.Position);
+                            bool hasLineOfSight = inRange && !_collisionManager!.IsLineOfSightBlocked(enemy.Position, _player.Position, enemy.Position);
                             
                             // If enemy doesn't have direct detection, reset their detection
                             if (!hasLineOfSight)
@@ -347,9 +368,13 @@ namespace Project9
                     }
                 }
             }
-
-            // Update enemies with range-based batching (only update nearby enemies)
-            // This significantly improves performance with many enemies
+        }
+        
+        /// <summary>
+        /// Update all enemies with range-based optimization
+        /// </summary>
+        private void UpdateEnemies(Vector2 playerPosition, bool playerIsSneaking, float deltaTime)
+        {
             const float ENEMY_UPDATE_RANGE = GameConfig.EnemyUpdateRange;
             const float ENEMY_UPDATE_RANGE_SQUARED = ENEMY_UPDATE_RANGE * ENEMY_UPDATE_RANGE;
             
@@ -385,14 +410,14 @@ namespace Project9
                 
                 // Create terrain-only collision check for pathfinding (same as player uses)
                 // Enemy collision will be handled during movement via MoveWithCollision sliding
-                Func<Vector2, bool> terrainOnlyCheck = (pos) => _collisionManager.CheckMovementCollision(pos);
+                Func<Vector2, bool> terrainOnlyCheck = (pos) => _collisionManager!.CheckMovementCollision(pos);
                 
                 enemy.Update(
                     playerPosition, // Use cached position
                     deltaTime, 
                     playerIsSneaking, // Use cached sneaking state
-                    (pos) => _collisionManager.CheckCollision(pos, true, enemyCurrentPos), 
-                    (from, to) => _collisionManager.IsLineOfSightBlocked(from, to, enemyCurrentPos),
+                    (pos) => _collisionManager!.CheckCollision(pos, true, enemyCurrentPos), 
+                    (from, to) => _collisionManager!.IsLineOfSightBlocked(from, to, enemyCurrentPos),
                     _collisionManager,
                     terrainOnlyCheck, // Pass terrain-only check for pathfinding
                     _alarmActive,
@@ -428,9 +453,6 @@ namespace Project9
                     }
                 }
             }
-            
-            _pathfindingStopwatch.Stop();
-            _lastPathfindingTimeMs = (float)_pathfindingStopwatch.Elapsed.TotalMilliseconds;
         }
 
         /// <summary>
@@ -462,12 +484,12 @@ namespace Project9
             {
                 // Check if still in range
                 float distanceToEnemy = Vector2.Distance(_player.Position, _autoAttackTarget.Position);
-                const float veryCloseRange = 30.0f;
-                const float meleeRange = 80.0f;
+                const float veryCloseRange = GameConfig.VeryCloseRange;
+                const float meleeRange = GameConfig.MeleeAttackRange;
                 
                 if (_player.EquippedWeapon is Gun gun)
                 {
-                    const float projectileLifetime = 0.5f;
+                    const float projectileLifetime = GameConfig.ProjectileLifetime;
                     float projectileRange = gun.ProjectileSpeed * projectileLifetime;
                     
                     // If very close, check melee range
@@ -493,7 +515,7 @@ namespace Project9
             // In Diablo 2 style, player can always move, even when being attacked
             // Use movement-only collision (terrain only, no enemies)
             
-            Console.WriteLine($"[EntityManager] Move player to ({target.X:F0}, {target.Y:F0})");
+            LogOverlay.Log($"[EntityManager] Move player to ({target.X:F0}, {target.Y:F0})", LogLevel.Info);
             _player.SetTarget(
                 target, 
                 (pos) => _collisionManager.CheckMovementCollision(pos), // Movement collision - terrain only, no enemies
@@ -514,13 +536,13 @@ namespace Project9
             
             // Calculate distance to enemy (used for both projectile and melee range checks)
             float distanceToEnemy = Vector2.Distance(_player.Position, enemy.Position);
-            const float meleeRange = 80.0f;
+            const float meleeRange = GameConfig.MeleeAttackRange;
             
             // If gun is equipped
             if (_player.EquippedWeapon is Gun gun)
             {
                 // Calculate projectile effective range (speed * lifetime)
-                const float projectileLifetime = 0.5f;
+                const float projectileLifetime = GameConfig.ProjectileLifetime;
                 float projectileRange = gun.ProjectileSpeed * projectileLifetime;
                 
                 // Only check projectile range - don't use melee behavior
@@ -629,13 +651,13 @@ namespace Project9
             
             // Check if in weapon range
             bool inRange = false;
-            const float meleeRange = 80.0f;
-            const float veryCloseRange = 30.0f; // Very close range for projectile weapons to act as melee
+            const float meleeRange = GameConfig.MeleeAttackRange;
+            const float veryCloseRange = GameConfig.VeryCloseRange; // Very close range for projectile weapons to act as melee
             
             if (_player.EquippedWeapon is Gun equippedGun)
             {
                 // Calculate projectile range
-                const float projectileLifetime = 0.5f;
+                const float projectileLifetime = GameConfig.ProjectileLifetime;
                 float projectileRange = equippedGun.ProjectileSpeed * projectileLifetime;
                 
                 // If very close, use melee behavior
@@ -715,12 +737,12 @@ namespace Project9
             }
             
             float distanceToEnemy = Vector2.Distance(_player.Position, _pendingAttackTarget.Position);
-            const float meleeRange = 80.0f;
+            const float meleeRange = GameConfig.MeleeAttackRange;
             
             // If gun is equipped
             if (_player.EquippedWeapon is Gun gun)
             {
-                const float projectileLifetime = 0.5f;
+                const float projectileLifetime = GameConfig.ProjectileLifetime;
                 float projectileRange = gun.ProjectileSpeed * projectileLifetime;
                 
                 // Only check projectile range - stop only when in pistol range
@@ -765,7 +787,7 @@ namespace Project9
             if (!_player.IsAlive)
                 return;
 
-            const float pickupRadius = 40.0f; // Distance to pick up weapon
+            const float pickupRadius = GameConfig.PickupRadius; // Distance to pick up weapon
             const float pickupRadiusSquared = pickupRadius * pickupRadius;
 
             foreach (var weaponPickup in _weaponPickups)
@@ -871,7 +893,7 @@ namespace Project9
                     gun.ProjectileSpeed,
                     gun.Damage,
                     isPlayerProjectile: true,
-                    lifetime: 0.5f // 250 pixel range (500 * 0.5 = 250)
+                    lifetime: GameConfig.ProjectileLifetime // 250 pixel range (500 * 0.5 = 250)
                 );
 
                 _projectiles.Add(projectile);
@@ -927,7 +949,7 @@ namespace Project9
                             continue;
 
                         float distance = Vector2.Distance(projectile.Position, enemy.Position);
-                        if (distance < 20.0f) // Hit radius
+                        if (distance < GameConfig.HitRadius) // Hit radius
                         {
                             enemy.TakeDamage(projectile.Damage);
                             
@@ -954,7 +976,7 @@ namespace Project9
                             continue;
 
                         float distance = Vector2.Distance(projectile.Position, camera.Position);
-                        if (distance < 20.0f) // Hit radius
+                        if (distance < GameConfig.HitRadius) // Hit radius
                         {
                             camera.TakeDamage(projectile.Damage);
                             
@@ -980,7 +1002,7 @@ namespace Project9
                     if (_player.IsAlive)
                     {
                         float distance = Vector2.Distance(projectile.Position, _player.Position);
-                        if (distance < 20.0f) // Hit radius
+                        if (distance < GameConfig.HitRadius) // Hit radius
                         {
                             _player.TakeDamage(projectile.Damage);
                             if (_renderSystem != null)

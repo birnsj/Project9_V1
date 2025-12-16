@@ -25,19 +25,19 @@ namespace Project9
         private Texture2D? _gridLineTexture;
         private Texture2D? _collisionDiamondTexture;
         private Texture2D? _clickEffectTexture;
-        private Texture2D? _pathLineTexture;
-        private Texture2D? _healthBarBackgroundTexture;
-        private Texture2D? _healthBarForegroundTexture;
         private Texture2D? _bloodSplatTexture;
         private Texture2D? _pistolRangeCircleTexture;
+        private Texture2D? _whiteTexture; // Reusable white texture for various drawing operations
         
         // Click effect
         private Vector2? _clickEffectPosition;
         private float _clickEffectTimer = 0.0f;
         
-        // Damage numbers (using array for better performance, no allocations)
-        private DamageNumber[] _damageNumbers = new DamageNumber[GameConfig.MaxDamageNumbers];
-        private int _damageNumberCount = 0;
+        // Renderer instances
+        private HealthBarRenderer _healthBarRenderer;
+        private PathRenderer _pathRenderer;
+        private DamageNumberRenderer _damageNumberRenderer;
+        private UIRenderer _uiRenderer;
         
         // Performance tracking
         private int _lastDrawCallCount = 0;
@@ -81,6 +81,12 @@ namespace Project9
             _map = map;
             _camera = camera;
             _uiFont = uiFont;
+            
+            // Initialize renderers
+            _healthBarRenderer = new HealthBarRenderer(graphicsDevice, uiFont);
+            _pathRenderer = new PathRenderer(graphicsDevice);
+            _damageNumberRenderer = new DamageNumberRenderer(uiFont);
+            _uiRenderer = new UIRenderer(graphicsDevice, uiFont);
         }
 
         /// <summary>
@@ -113,13 +119,7 @@ namespace Project9
         /// </summary>
         public void ShowDamageNumber(Vector2 worldPosition, float damage)
         {
-            // Use array instead of List to avoid allocations
-            if (_damageNumberCount < _damageNumbers.Length)
-            {
-                _damageNumbers[_damageNumberCount] = new DamageNumber(worldPosition, damage);
-                _damageNumberCount++;
-            }
-            // If array is full, ignore new damage numbers (or overwrite oldest)
+            _damageNumberRenderer.ShowDamageNumber(worldPosition, damage);
         }
         
         /// <summary>
@@ -127,20 +127,7 @@ namespace Project9
         /// </summary>
         public void UpdateDamageNumbers(float deltaTime)
         {
-            // Update in reverse order so we can remove expired ones efficiently
-            for (int i = _damageNumberCount - 1; i >= 0; i--)
-            {
-                _damageNumbers[i].Update(deltaTime);
-                if (_damageNumbers[i].IsExpired)
-                {
-                    // Swap with last element and decrement count (more efficient than shifting)
-                    if (i < _damageNumberCount - 1)
-                    {
-                        _damageNumbers[i] = _damageNumbers[_damageNumberCount - 1];
-                    }
-                    _damageNumberCount--;
-                }
-            }
+            _damageNumberRenderer.UpdateDamageNumbers(deltaTime);
         }
 
         /// <summary>
@@ -189,7 +176,14 @@ namespace Project9
             float maxY = screenBottomRight.Y + margin;
 
             // Collect all entities for isometric depth sorting
-            var entitiesToDraw = new List<(Entity entity, float depth, string type)>();
+            var entitiesToDraw = new List<(Entity? entity, float depth, string type)>();
+            var worldObjectsToDraw = new List<(WorldObject worldObject, float depth)>();
+            
+            // Collect bounding box faces for per-face sorting (only when bounding boxes are shown)
+            var boundingBoxFaces = new List<(Entity? entity, Vector2[] vertices, float depth, Color color)>();
+            
+            // Height scale for isometric Z projection (matches rendering)
+            const float heightScale = 0.5f;
             
             // Add cameras
             foreach (var camera in entityManager.Cameras)
@@ -197,8 +191,17 @@ namespace Project9
                 if (camera.Position.X + 100 >= minX && camera.Position.X - 100 <= maxX &&
                     camera.Position.Y + 100 >= minY && camera.Position.Y - 100 <= maxY)
                 {
-                    float depth = CalculateIsometricDepth(camera.Position, camera.ZHeight);
+                    // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                    float zOffsetY = camera.ZHeight * heightScale;
+                    float topFaceCenterY = camera.Position.Y - zOffsetY;
+                    float depth = (camera.Position.X + topFaceCenterY) - (camera.ZHeight * 0.3f);
                     entitiesToDraw.Add((camera, depth, "camera"));
+                    
+                    // If bounding boxes are shown, extract faces for per-face sorting
+                    if (_showBoundingBoxes && camera.ZHeight > 0)
+                    {
+                        AddBoundingBoxFaces(camera, boundingBoxFaces, heightScale);
+                    }
                 }
             }
             
@@ -208,8 +211,22 @@ namespace Project9
                 if (enemy.Position.X + 50 >= minX && enemy.Position.X - 50 <= maxX &&
                     enemy.Position.Y + 50 >= minY && enemy.Position.Y - 50 <= maxY)
                 {
-                    float depth = CalculateIsometricDepth(enemy.Position, enemy.ZHeight);
+                    // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                    // In isometric projection, screen Y = (X + Y) * scale, so objects with higher (X+Y) are more forward
+                    // Z height moves objects up in screen space, so subtract it from depth
+                    // Use the top face center for stable sorting of tall objects
+                    float halfHeight = enemy.BoundingBoxHeight / 2.0f;
+                    float zOffsetY = enemy.ZHeight * heightScale;
+                    float topFaceCenterY = enemy.Position.Y - zOffsetY;
+                    // Isometric depth: (X + Y) represents forwardness, subtract Z offset
+                    float depth = (enemy.Position.X + topFaceCenterY) - (enemy.ZHeight * 0.3f);
                     entitiesToDraw.Add((enemy, depth, "enemy"));
+                    
+                    // If bounding boxes are shown, extract faces for per-face sorting
+                    if (_showBoundingBoxes && enemy.ZHeight > 0)
+                    {
+                        AddBoundingBoxFaces(enemy, boundingBoxFaces, heightScale);
+                    }
                 }
             }
             
@@ -220,23 +237,103 @@ namespace Project9
                     weaponPickup.Position.X + 30 >= minX && weaponPickup.Position.X - 30 <= maxX &&
                     weaponPickup.Position.Y + 30 >= minY && weaponPickup.Position.Y - 30 <= maxY)
                 {
-                    float depth = CalculateIsometricDepth(weaponPickup.Position, weaponPickup.ZHeight);
+                    // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                    float zOffsetY = weaponPickup.ZHeight * heightScale;
+                    float topFaceCenterY = weaponPickup.Position.Y - zOffsetY;
+                    float depth = (weaponPickup.Position.X + topFaceCenterY) - (weaponPickup.ZHeight * 0.3f);
                     entitiesToDraw.Add((weaponPickup, depth, "weapon"));
+                    
+                    // If bounding boxes are shown, extract faces for per-face sorting
+                    if (_showBoundingBoxes && weaponPickup.ZHeight > 0)
+                    {
+                        AddBoundingBoxFaces(weaponPickup, boundingBoxFaces, heightScale);
+                    }
                 }
             }
             
             // Add player
-            float playerDepth = CalculateIsometricDepth(entityManager.Player.Position, entityManager.Player.ZHeight);
+            // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+            float playerZOffsetY = entityManager.Player.ZHeight * heightScale;
+            float playerTopFaceCenterY = entityManager.Player.Position.Y - playerZOffsetY;
+            float playerDepth = (entityManager.Player.Position.X + playerTopFaceCenterY) - (entityManager.Player.ZHeight * 0.3f);
             entitiesToDraw.Add((entityManager.Player, playerDepth, "player"));
+            
+            // If bounding boxes are shown, extract faces for per-face sorting
+            if (_showBoundingBoxes && entityManager.Player.ZHeight > 0)
+            {
+                AddBoundingBoxFaces(entityManager.Player, boundingBoxFaces, heightScale);
+            }
+            
+            // Add world objects (furniture)
+            foreach (var worldObject in _map.WorldObjects)
+            {
+                // Frustum culling for world objects
+                float objHalfWidth = worldObject.DiamondWidth / 2.0f;
+                float objHalfHeight = worldObject.DiamondHeight / 2.0f;
+                if (worldObject.Position.X + objHalfWidth >= minX && worldObject.Position.X - objHalfWidth <= maxX &&
+                    worldObject.Position.Y + objHalfHeight >= minY && worldObject.Position.Y - objHalfHeight <= maxY)
+                {
+                    // Sort using isometric depth formula: depth = (X + Y) - zHeight * scale
+                    float zOffsetY = worldObject.ZHeight * heightScale;
+                    float topFaceCenterY = worldObject.Position.Y - zOffsetY;
+                    float depth = (worldObject.Position.X + topFaceCenterY) - (worldObject.ZHeight * 0.3f);
+                    worldObjectsToDraw.Add((worldObject, depth));
+                    
+                    // If bounding boxes are shown, extract faces for per-face sorting
+                    if (_showBoundingBoxes && worldObject.ZHeight > 0)
+                    {
+                        AddWorldObjectBoundingBoxFaces(worldObject, boundingBoxFaces, heightScale);
+                    }
+                }
+            }
+            
+            // Sort bounding box faces by depth (back to front)
+            boundingBoxFaces.Sort((a, b) => a.depth.CompareTo(b.depth));
             
             // Sort by isometric depth (back to front)
             entitiesToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
+            worldObjectsToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
             
-            // Draw entities in sorted order
+            // Merge sorted lists for proper depth sorting
+            var allToDraw = new List<(object drawable, float depth, string type)>();
             foreach (var (entity, depth, type) in entitiesToDraw)
             {
-                // Set bounding box visibility based on toggle
-                entity.ShowBoundingBox = _showBoundingBoxes;
+                allToDraw.Add((entity!, depth, type));
+            }
+            foreach (var (worldObject, depth) in worldObjectsToDraw)
+            {
+                allToDraw.Add((worldObject, depth, "worldobject"));
+            }
+            allToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
+            
+            // Create line texture for world object wireframes if needed
+            if (_whiteTexture == null)
+            {
+                _whiteTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _whiteTexture.SetData(new[] { Color.White });
+            }
+            
+            // Draw all objects in sorted order first (sprites behind bounding boxes)
+            foreach (var (drawable, depth, type) in allToDraw)
+            {
+                if (type == "worldobject")
+                {
+                    var worldObject = drawable as WorldObject;
+                    if (worldObject != null)
+                    {
+                        worldObject.ShowBoundingBox = _showBoundingBoxes;
+                        worldObject.Draw(_spriteBatch, _whiteTexture);
+                        _lastDrawCallCount++;
+                    }
+                    continue;
+                }
+                
+                var entity = drawable as Entity;
+                if (entity == null)
+                    continue;
+                    
+                // Set bounding box visibility to false since we're drawing faces separately
+                entity.ShowBoundingBox = false;
                 
                 if (type == "camera")
                 {
@@ -253,7 +350,11 @@ namespace Project9
                         // Draw health bar if camera has been damaged (health < maxHealth)
                         if (camera.IsAlive && camera.CurrentHealth < camera.MaxHealth)
                         {
-                            DrawEnemyHealthBar(_spriteBatch, camera);
+                            // Cast camera to Enemy for health bar rendering (cameras inherit from Enemy)
+                            if (camera is Enemy cameraEnemy)
+                            {
+                                _healthBarRenderer.DrawEnemyHealthBar(_spriteBatch, cameraEnemy);
+                            }
                         }
                         
                         _lastDrawCallCount += 2; // Sight cone, sprite
@@ -308,7 +409,7 @@ namespace Project9
                             // Only show health bar if player is within detection range
                             if (distanceSquared <= effectiveRangeSquared)
                             {
-                                DrawEnemyHealthBar(_spriteBatch, enemy);
+                                _healthBarRenderer.DrawEnemyHealthBar(_spriteBatch, enemy);
                             }
                         }
                         
@@ -384,7 +485,7 @@ namespace Project9
             // Draw debug path for player (only if not dragging/following cursor and path debug is enabled)
             if (_showPath && !entityManager.IsFollowingCursor)
             {
-                DrawDebugPath(_spriteBatch, entityManager.Player);
+                _pathRenderer.DrawDebugPath(_spriteBatch, entityManager.Player);
             }
 
             // Draw collision cells
@@ -395,7 +496,7 @@ namespace Project9
             }
 
             // Draw damage numbers in world space (before ending world space rendering)
-            DrawDamageNumbersWorldSpace(_spriteBatch);
+            _damageNumberRenderer.DrawDamageNumbers(_spriteBatch);
 
             // Draw name tags when hovering over entities (only if not in combat)
             if (!entityManager.IsPlayerInCombat())
@@ -404,6 +505,23 @@ namespace Project9
             }
 
             _spriteBatch.End();
+            
+            // Draw bounding box faces last (after everything else) if enabled
+            if (_showBoundingBoxes && boundingBoxFaces.Count > 0)
+            {
+                _spriteBatch.Begin(
+                    transformMatrix: _camera.GetTransform(),
+                    samplerState: SamplerState.PointClamp
+                );
+                
+                Texture2D? lineTexture = _whiteTexture;
+                foreach (var (entity, vertices, depth, color) in boundingBoxFaces)
+                {
+                    DrawBoundingBoxFace(_spriteBatch, lineTexture, vertices, color);
+                }
+                
+                _spriteBatch.End();
+            }
 
             // Screen space rendering (UI)
             if (_uiFont != null)
@@ -413,54 +531,23 @@ namespace Project9
                 // Health bar in lower left corner (only if alive)
                 if (entityManager.Player.IsAlive)
                 {
-                    DrawHealthBar(_spriteBatch, entityManager.Player);
+                    _healthBarRenderer.DrawPlayerHealthBar(_spriteBatch, entityManager.Player);
                 }
 
                 // Death screen (if player is dead)
                 if (entityManager.Player.IsDead)
                 {
-                    DrawDeathScreen(_spriteBatch, entityManager.Player);
+                    _uiRenderer.DrawDeathScreen(_spriteBatch, entityManager.Player);
                 }
 
                 // Version number
-                string versionText = "V002";
-                Vector2 textSize = _uiFont.MeasureString(versionText);
-                Vector2 position = new Vector2(
-                    _graphicsDevice.Viewport.Width - textSize.X - 10,
-                    _graphicsDevice.Viewport.Height - textSize.Y - 10
-                );
-                _spriteBatch.DrawString(_uiFont, versionText, position, Color.White);
+                _uiRenderer.DrawVersion(_spriteBatch);
 
                 // Sneak indicator
-                if (entityManager.Player.IsSneaking && entityManager.Player.IsAlive)
-                {
-                    string sneakText = "SNEAK";
-                    Vector2 sneakTextSize = _uiFont.MeasureString(sneakText);
-                    Vector2 sneakPosition = new Vector2(
-                        _graphicsDevice.Viewport.Width / 2.0f - sneakTextSize.X / 2.0f,
-                        50.0f
-                    );
-                    _spriteBatch.DrawString(_uiFont, sneakText, sneakPosition, Color.Purple);
-                }
+                _uiRenderer.DrawSneakIndicator(_spriteBatch, entityManager.Player.IsSneaking, entityManager.Player.IsAlive);
                 
                 // Alarm countdown
-                if (entityManager.AlarmActive)
-                {
-                    int secondsRemaining = (int)Math.Ceiling(entityManager.AlarmTimer);
-                    string alarmText = $"ALARM: {secondsRemaining}";
-                    Vector2 alarmTextSize = _uiFont.MeasureString(alarmText);
-                    Vector2 alarmPosition = new Vector2(
-                        _graphicsDevice.Viewport.Width / 2.0f - alarmTextSize.X / 2.0f,
-                        100.0f
-                    );
-                    
-                    // Flash red when time is running out
-                    Color alarmColor = secondsRemaining <= 10 ? Color.Red : Color.OrangeRed;
-                    
-                    // Draw shadow for better visibility
-                    _spriteBatch.DrawString(_uiFont, alarmText, alarmPosition + new Vector2(2, 2), Color.Black);
-                    _spriteBatch.DrawString(_uiFont, alarmText, alarmPosition, alarmColor);
-                }
+                _uiRenderer.DrawAlarmCountdown(_spriteBatch, entityManager.AlarmActive, entityManager.AlarmTimer);
 
                 _spriteBatch.End();
             }
@@ -636,126 +723,15 @@ namespace Project9
             // Z height is subtracted so objects at higher elevations appear in front
             return position.Y + position.X * 0.001f - zHeight * 0.5f;
         }
+        
+        /// <summary>
+        /// Calculate isometric depth using separate X and Y coordinates
+        /// </summary>
+        private float CalculateIsometricDepth(float x, float y, float zHeight)
+        {
+            return y + x * 0.001f - zHeight * 0.5f;
+        }
 
-        private void DrawDebugPath(SpriteBatch spriteBatch, Player player)
-        {
-            // Only draw if player has a target
-            if (!player.TargetPosition.HasValue)
-                return;
-            
-            // Create line texture if needed
-            if (_pathLineTexture == null)
-            {
-                _pathLineTexture = new Texture2D(_graphicsDevice, 1, 1);
-                _pathLineTexture.SetData(new[] { Color.White });
-            }
-            
-            // If there's a pathfinding path, draw it (this means terrain is blocked)
-            // Pathfinding paths use cyan/yellow to indicate going around obstacles
-            if (player.Path != null && player.Path.Count > 0)
-            {
-                // Draw path from player position through all waypoints to target
-                Vector2? previousPoint = player.Position;
-                
-                // Draw lines connecting path waypoints (cyan = going around obstacles)
-                foreach (var waypoint in player.Path)
-                {
-                    if (previousPoint.HasValue)
-                    {
-                        DrawPathLine(spriteBatch, previousPoint.Value, waypoint, Color.Cyan);
-                    }
-                    previousPoint = waypoint;
-                }
-                
-                // Draw line to target if it exists and is different from last waypoint
-                if (player.TargetPosition.HasValue && previousPoint.HasValue)
-                {
-                    float distToTarget = Vector2.Distance(previousPoint.Value, player.TargetPosition.Value);
-                    if (distToTarget > 5.0f) // Only draw if target is significantly different
-                    {
-                        DrawPathLine(spriteBatch, previousPoint.Value, player.TargetPosition.Value, Color.Yellow);
-                    }
-                }
-                
-                // Draw waypoint markers
-                foreach (var waypoint in player.Path)
-                {
-                    DrawPathWaypoint(spriteBatch, waypoint, Color.Cyan);
-                }
-            }
-            else
-            {
-                // No pathfinding path - terrain path is clear, draw direct line (green)
-                // Enemy collision will be handled during movement via sliding
-                // Only draw if target is far enough away to be meaningful
-                float distToTarget = Vector2.Distance(player.Position, player.TargetPosition.Value);
-                if (distToTarget > 5.0f)
-                {
-                    // Green = direct path, terrain is clear (enemies will be handled by collision sliding)
-                    DrawPathLine(spriteBatch, player.Position, player.TargetPosition.Value, Color.Lime);
-                    // Also draw target marker
-                    DrawPathWaypoint(spriteBatch, player.TargetPosition.Value, Color.Lime, 8.0f);
-                }
-            }
-            
-            // Draw target marker
-            if (player.TargetPosition.HasValue)
-            {
-                DrawPathWaypoint(spriteBatch, player.TargetPosition.Value, Color.Yellow, 8.0f);
-            }
-        }
-        
-        private void DrawPathLine(SpriteBatch spriteBatch, Vector2 start, Vector2 end, Color color)
-        {
-            Vector2 edge = end - start;
-            float angle = (float)Math.Atan2(edge.Y, edge.X);
-            float length = edge.Length();
-            
-            // Use semi-transparent color for path lines
-            Color lineColor = new Color(color.R, color.G, color.B, (byte)180);
-            
-            spriteBatch.Draw(
-                _pathLineTexture!,
-                start,
-                null,
-                lineColor,
-                angle,
-                Vector2.Zero,
-                new Vector2(length, 3.0f), // 3 pixel thick line
-                SpriteEffects.None,
-                0.0f
-            );
-        }
-        
-        private void DrawPathWaypoint(SpriteBatch spriteBatch, Vector2 position, Color color, float size = 6.0f)
-        {
-            if (_pathLineTexture == null)
-            {
-                _pathLineTexture = new Texture2D(_graphicsDevice, 1, 1);
-                _pathLineTexture.SetData(new[] { Color.White });
-            }
-            
-            // Draw a small circle/square at waypoint position
-            Color waypointColor = new Color(color.R, color.G, color.B, (byte)220);
-            
-            // Draw a small diamond shape (matching isometric style)
-            float halfSize = size / 2.0f;
-            
-            // Draw 4 lines forming a diamond
-            Vector2[] diamondPoints = new Vector2[]
-            {
-                position + new Vector2(0, -halfSize),      // Top
-                position + new Vector2(halfSize, 0),       // Right
-                position + new Vector2(0, halfSize),        // Bottom
-                position + new Vector2(-halfSize, 0)       // Left
-            };
-            
-            for (int i = 0; i < 4; i++)
-            {
-                int next = (i + 1) % 4;
-                DrawPathLine(spriteBatch, diamondPoints[i], diamondPoints[next], waypointColor);
-            }
-        }
         
         private void DrawClickEffect(SpriteBatch spriteBatch)
         {
@@ -822,317 +798,6 @@ namespace Project9
             );
         }
 
-        private void DrawHealthBar(SpriteBatch spriteBatch, Player player)
-        {
-            const int barWidth = 200;
-            const int barHeight = 20;
-            const int padding = 10;
-            const int borderThickness = 2;
-            
-            // Position in lower left corner
-            Vector2 barPosition = new Vector2(
-                padding,
-                _graphicsDevice.Viewport.Height - barHeight - padding
-            );
-            
-            // Create textures if needed
-            if (_healthBarBackgroundTexture == null)
-            {
-                _healthBarBackgroundTexture = new Texture2D(_graphicsDevice, barWidth, barHeight);
-                Color[] bgData = new Color[barWidth * barHeight];
-                for (int i = 0; i < bgData.Length; i++)
-                {
-                    bgData[i] = new Color(40, 40, 40, 230); // Dark gray background
-                }
-                _healthBarBackgroundTexture.SetData(bgData);
-            }
-            
-            if (_healthBarForegroundTexture == null)
-            {
-                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
-                _healthBarForegroundTexture.SetData(new[] { Color.White });
-            }
-            
-            // Draw background
-            spriteBatch.Draw(_healthBarBackgroundTexture, barPosition, Color.White);
-            
-            // Calculate health percentage
-            float healthPercent = player.MaxHealth > 0 ? player.CurrentHealth / player.MaxHealth : 0f;
-            healthPercent = MathHelper.Clamp(healthPercent, 0f, 1f);
-            
-            // Determine health bar color based on health percentage
-            Color healthColor;
-            if (healthPercent > 0.6f)
-            {
-                // Green when above 60%
-                healthColor = Color.Green;
-            }
-            else if (healthPercent > 0.3f)
-            {
-                // Yellow when between 30% and 60%
-                healthColor = Color.Yellow;
-            }
-            else
-            {
-                // Red when below 30%
-                healthColor = Color.Red;
-            }
-            
-            // Draw health bar foreground
-            int healthBarWidth = (int)((barWidth - borderThickness * 2) * healthPercent);
-            if (healthBarWidth > 0)
-            {
-                Rectangle healthRect = new Rectangle(
-                    (int)barPosition.X + borderThickness,
-                    (int)barPosition.Y + borderThickness,
-                    healthBarWidth,
-                    barHeight - borderThickness * 2
-                );
-                spriteBatch.Draw(_healthBarForegroundTexture, healthRect, healthColor);
-            }
-            
-            // Draw border
-            Rectangle borderRect = new Rectangle(
-                (int)barPosition.X,
-                (int)barPosition.Y,
-                barWidth,
-                barHeight
-            );
-            DrawRectangleOutline(spriteBatch, borderRect, Color.White, borderThickness);
-            
-            // Draw health text (above the bar)
-            if (_uiFont != null)
-            {
-                string healthText = $"HP: {player.CurrentHealth:F0}/{player.MaxHealth:F0}";
-                Vector2 textSize = _uiFont.MeasureString(healthText);
-                Vector2 textPosition = new Vector2(
-                    barPosition.X + (barWidth - textSize.X) / 2.0f,
-                    barPosition.Y - textSize.Y - 5
-                );
-                spriteBatch.DrawString(_uiFont, healthText, textPosition, Color.White);
-            }
-        }
-        
-        private void DrawRectangleOutline(SpriteBatch spriteBatch, Rectangle rect, Color color, int thickness)
-        {
-            if (_healthBarForegroundTexture == null)
-            {
-                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
-                _healthBarForegroundTexture.SetData(new[] { Color.White });
-            }
-            
-            // Top
-            spriteBatch.Draw(_healthBarForegroundTexture, 
-                new Rectangle(rect.X, rect.Y, rect.Width, thickness), color);
-            
-            // Bottom
-            spriteBatch.Draw(_healthBarForegroundTexture, 
-                new Rectangle(rect.X, rect.Y + rect.Height - thickness, rect.Width, thickness), color);
-            
-            // Left
-            spriteBatch.Draw(_healthBarForegroundTexture, 
-                new Rectangle(rect.X, rect.Y, thickness, rect.Height), color);
-            
-            // Right
-            spriteBatch.Draw(_healthBarForegroundTexture, 
-                new Rectangle(rect.X + rect.Width - thickness, rect.Y, thickness, rect.Height), color);
-        }
-        
-        private void DrawEnemyHealthBar(SpriteBatch spriteBatch, Enemy enemy)
-        {
-            const float barWidth = 60.0f;
-            const float barHeight = 6.0f;
-            const float borderThickness = 1.0f;
-            const float barOffsetY = -40.0f; // Position above enemy (in world space)
-            
-            // Position health bar above enemy in world space (so it moves with the enemy)
-            Vector2 barPosition = new Vector2(
-                enemy.Position.X - barWidth / 2.0f,
-                enemy.Position.Y + barOffsetY
-            );
-            
-            // Create textures if needed
-            if (_healthBarForegroundTexture == null)
-            {
-                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
-                _healthBarForegroundTexture.SetData(new[] { Color.White });
-            }
-            
-            // Draw background (dark red)
-            spriteBatch.Draw(
-                _healthBarForegroundTexture,
-                barPosition,
-                null,
-                new Color(60, 0, 0, 200),
-                0f,
-                Vector2.Zero,
-                new Vector2(barWidth, barHeight),
-                SpriteEffects.None,
-                0f
-            );
-            
-            // Calculate health percentage
-            float healthPercent = enemy.MaxHealth > 0 ? enemy.CurrentHealth / enemy.MaxHealth : 0f;
-            healthPercent = MathHelper.Clamp(healthPercent, 0f, 1f);
-            
-            // Draw health bar (red)
-            float healthBarWidth = (barWidth - borderThickness * 2) * healthPercent;
-            if (healthBarWidth > 0)
-            {
-                Color healthColor = new Color(200, 0, 0, 255); // Red
-                Vector2 healthPos = barPosition + new Vector2(borderThickness, borderThickness);
-                spriteBatch.Draw(
-                    _healthBarForegroundTexture,
-                    healthPos,
-                    null,
-                    healthColor,
-                    0f,
-                    Vector2.Zero,
-                    new Vector2(healthBarWidth, barHeight - borderThickness * 2),
-                    SpriteEffects.None,
-                    0f
-                );
-            }
-            
-            // Draw border (4 lines)
-            float borderAlpha = 0.8f;
-            byte alphaByte = (byte)(255 * borderAlpha);
-            Color semiWhite = new Color((byte)255, (byte)255, (byte)255, alphaByte);
-            
-            // Top
-            spriteBatch.Draw(
-                _healthBarForegroundTexture,
-                barPosition,
-                null,
-                semiWhite,
-                0f,
-                Vector2.Zero,
-                new Vector2(barWidth, borderThickness),
-                SpriteEffects.None,
-                0f
-            );
-            
-            // Bottom
-            spriteBatch.Draw(
-                _healthBarForegroundTexture,
-                barPosition + new Vector2(0, barHeight - borderThickness),
-                null,
-                semiWhite,
-                0f,
-                Vector2.Zero,
-                new Vector2(barWidth, borderThickness),
-                SpriteEffects.None,
-                0f
-            );
-            
-            // Left
-            spriteBatch.Draw(
-                _healthBarForegroundTexture,
-                barPosition,
-                null,
-                semiWhite,
-                0f,
-                Vector2.Zero,
-                new Vector2(borderThickness, barHeight),
-                SpriteEffects.None,
-                0f
-            );
-            
-            // Right
-            spriteBatch.Draw(
-                _healthBarForegroundTexture,
-                barPosition + new Vector2(barWidth - borderThickness, 0),
-                null,
-                semiWhite,
-                0f,
-                Vector2.Zero,
-                new Vector2(borderThickness, barHeight),
-                SpriteEffects.None,
-                0f
-            );
-        }
-        
-        private void DrawDeathScreen(SpriteBatch spriteBatch, Player player)
-        {
-            if (_uiFont == null)
-                return;
-            
-            // Draw semi-transparent overlay
-            if (_healthBarForegroundTexture == null)
-            {
-                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
-                _healthBarForegroundTexture.SetData(new[] { Color.White });
-            }
-            
-            Rectangle overlayRect = new Rectangle(0, 0, _graphicsDevice.Viewport.Width, _graphicsDevice.Viewport.Height);
-            spriteBatch.Draw(_healthBarForegroundTexture, overlayRect, new Color(0, 0, 0, 180)); // Dark overlay
-            
-            // "You are Dead" text
-            string deathText = "You are Dead";
-            Vector2 deathTextSize = _uiFont.MeasureString(deathText);
-            Vector2 deathTextPos = new Vector2(
-                _graphicsDevice.Viewport.Width / 2.0f - deathTextSize.X / 2.0f,
-                _graphicsDevice.Viewport.Height / 2.0f - 80.0f
-            );
-            spriteBatch.DrawString(_uiFont, deathText, deathTextPos, Color.Red);
-            
-            // Countdown text
-            int countdownSeconds = (int)Math.Ceiling(player.RespawnTimer);
-            if (countdownSeconds < 0) countdownSeconds = 0;
-            string countdownText = $"Respawning in {countdownSeconds}...";
-            Vector2 countdownTextSize = _uiFont.MeasureString(countdownText);
-            Vector2 countdownTextPos = new Vector2(
-                _graphicsDevice.Viewport.Width / 2.0f - countdownTextSize.X / 2.0f,
-                _graphicsDevice.Viewport.Height / 2.0f - 20.0f
-            );
-            spriteBatch.DrawString(_uiFont, countdownText, countdownTextPos, Color.White);
-            
-            // "Press Space to Respawn" message
-            if (player.IsRespawning)
-            {
-                string respawnHintText = "Press Space to Respawn";
-                Vector2 respawnHintTextSize = _uiFont.MeasureString(respawnHintText);
-                Vector2 respawnHintTextPos = new Vector2(
-                    _graphicsDevice.Viewport.Width / 2.0f - respawnHintTextSize.X / 2.0f,
-                    _graphicsDevice.Viewport.Height / 2.0f + 20.0f
-                );
-                spriteBatch.DrawString(_uiFont, respawnHintText, respawnHintTextPos, Color.Yellow);
-            }
-        }
-        
-        private void DrawDamageNumbersWorldSpace(SpriteBatch spriteBatch)
-        {
-            if (_uiFont == null)
-                return;
-            
-            if (_damageNumberCount == 0)
-                return;
-            
-            // Iterate only over active damage numbers
-            for (int i = 0; i < _damageNumberCount; i++)
-            {
-                var damageNumber = _damageNumbers[i];
-                // Position in world space (above entity, above health bar)
-                Vector2 worldPos = damageNumber.Position + new Vector2(0, GameConfig.DamageNumberOffsetY);
-                
-                string damageText = $"-{damageNumber.Damage:F0}";
-                Vector2 textSize = _uiFont.MeasureString(damageText);
-                Vector2 textPos = worldPos - new Vector2(textSize.X / 2.0f, textSize.Y / 2.0f);
-                
-                // Draw with alpha fade
-                float alpha = damageNumber.Alpha;
-                if (alpha <= 0.01f)
-                    continue; // Skip if invisible
-                    
-                byte alphaByte = (byte)(255 * alpha);
-                byte shadowAlpha = (byte)(128 * alpha);
-                Color textColor = new Color((byte)255, (byte)100, (byte)100, alphaByte); // Red damage text
-                
-                // Draw shadow for better visibility (small offset in world space)
-                spriteBatch.DrawString(_uiFont, damageText, textPos + new Vector2(2, 2), new Color((byte)0, (byte)0, (byte)0, shadowAlpha));
-                spriteBatch.DrawString(_uiFont, damageText, textPos, textColor);
-            }
-        }
 
         /// <summary>
         /// Draw name tags above entities when mouse is hovering over them (only when not in combat)
@@ -1147,23 +812,37 @@ namespace Project9
             Vector2 mouseScreenPos = new Vector2(mouseState.X, mouseState.Y);
             Vector2 mouseWorldPos = ScreenToWorld(mouseScreenPos);
 
-            const float hoverRadius = 50.0f; // Distance threshold for hover detection
-            const float nameTagOffsetY = -50.0f; // Position above entity
+            const float hoverRadius = GameConfig.HoverRadius; // Distance threshold for hover detection
+            const float nameTagOffsetY = GameConfig.NameTagOffsetY; // Position above entity
 
             // Check enemies
             foreach (var enemy in entityManager.Enemies)
             {
-                if (!enemy.IsAlive)
+                // Skip enemies that are completely gone (not alive and not dead)
+                if (!enemy.IsAlive && !enemy.IsDead)
                     continue;
 
                 float distance = Vector2.Distance(mouseWorldPos, enemy.Position);
                 if (distance <= hoverRadius)
                 {
-                    string name = enemy._enemyData?.Name ?? "Enemy";
-                    if (string.IsNullOrWhiteSpace(name))
-                        name = "Enemy";
+                    string name;
+                    Color nameColor;
                     
-                    DrawNameTag(spriteBatch, enemy.Position + new Vector2(0, nameTagOffsetY), name, Color.Orange);
+                    // If enemy is dead, show "Corpse" instead of name
+                    if (enemy.IsDead)
+                    {
+                        name = "Corpse";
+                        nameColor = Color.Gray; // Gray color for corpses
+                    }
+                    else
+                    {
+                        name = enemy._enemyData?.Name ?? "Enemy";
+                        if (string.IsNullOrWhiteSpace(name))
+                            name = "Enemy";
+                        nameColor = Color.Orange; // Orange for alive enemies
+                    }
+                    
+                    DrawNameTag(spriteBatch, enemy.Position + new Vector2(0, nameTagOffsetY), name, nameColor);
                     return; // Only show one name tag at a time
                 }
             }
@@ -1197,6 +876,22 @@ namespace Project9
                     return; // Only show one name tag at a time
                 }
             }
+            
+            // Check world objects (furniture)
+            foreach (var worldObject in _map.WorldObjects)
+            {
+                float distance = Vector2.Distance(mouseWorldPos, worldObject.Position);
+                if (distance <= hoverRadius)
+                {
+                    string name = worldObject.Name;
+                    if (string.IsNullOrWhiteSpace(name))
+                        name = "Furniture";
+                    
+                    // Use yellow color for furniture to distinguish from entities
+                    DrawNameTag(spriteBatch, worldObject.Position + new Vector2(0, nameTagOffsetY), name, Color.Yellow);
+                    return; // Only show one name tag at a time
+                }
+            }
         }
 
         /// <summary>
@@ -1214,10 +909,10 @@ namespace Project9
             Vector2 textPos = worldPosition - new Vector2(textSize.X / 2.0f, textSize.Y / 2.0f);
             
             // Create background texture if needed
-            if (_healthBarForegroundTexture == null)
+            if (_whiteTexture == null)
             {
-                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
-                _healthBarForegroundTexture.SetData(new[] { Color.White });
+                _whiteTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _whiteTexture.SetData(new[] { Color.White });
             }
             
             // Draw background rectangle (semi-transparent dark background)
@@ -1226,7 +921,7 @@ namespace Project9
             Vector2 bgSize = textSize + new Vector2(padding * 2, padding * 2);
             
             spriteBatch.Draw(
-                _healthBarForegroundTexture,
+                _whiteTexture,
                 bgPos,
                 null,
                 new Color(0, 0, 0, 180), // Semi-transparent black
@@ -1243,7 +938,7 @@ namespace Project9
             
             // Top border
             spriteBatch.Draw(
-                _healthBarForegroundTexture,
+                _whiteTexture,
                 bgPos,
                 null,
                 borderColor,
@@ -1256,7 +951,7 @@ namespace Project9
             
             // Bottom border
             spriteBatch.Draw(
-                _healthBarForegroundTexture,
+                _whiteTexture,
                 bgPos + new Vector2(0, bgSize.Y - borderThickness),
                 null,
                 borderColor,
@@ -1269,7 +964,7 @@ namespace Project9
             
             // Left border
             spriteBatch.Draw(
-                _healthBarForegroundTexture,
+                _whiteTexture,
                 bgPos,
                 null,
                 borderColor,
@@ -1282,7 +977,7 @@ namespace Project9
             
             // Right border
             spriteBatch.Draw(
-                _healthBarForegroundTexture,
+                _whiteTexture,
                 bgPos + new Vector2(bgSize.X - borderThickness, 0),
                 null,
                 borderColor,
@@ -1307,10 +1002,10 @@ namespace Project9
                 return;
                 
             // Create a simple line texture if needed
-            if (_healthBarForegroundTexture == null)
+            if (_whiteTexture == null)
             {
-                _healthBarForegroundTexture = new Texture2D(_graphicsDevice, 1, 1);
-                _healthBarForegroundTexture.SetData(new[] { Color.White });
+                _whiteTexture = new Texture2D(_graphicsDevice, 1, 1);
+                _whiteTexture.SetData(new[] { Color.White });
             }
             
             // Calculate direction player is facing
@@ -1351,10 +1046,10 @@ namespace Project9
             float angle = (float)Math.Atan2(edge.Y, edge.X);
             float lineLength = edge.Length();
             
-            if (_healthBarForegroundTexture != null)
+            if (_whiteTexture != null)
             {
                 spriteBatch.Draw(
-                    _healthBarForegroundTexture,
+                    _whiteTexture,
                     player.Position,
                     null,
                     weaponColor,
@@ -1376,7 +1071,7 @@ namespace Project9
                 return;
             
             // Calculate projectile range (speed * lifetime)
-            const float projectileLifetime = 0.5f; // 250 / 500 = 0.5 seconds
+            const float projectileLifetime = GameConfig.ProjectileLifetime; // 250 / 500 = 0.5 seconds
             float range = gun.ProjectileSpeed * projectileLifetime; // 500 * 0.5 = 250 pixels
             
             int radius = (int)range;
@@ -1432,6 +1127,180 @@ namespace Project9
         {
             // This method is no longer used - damage numbers are drawn in world space
             // Keeping for compatibility
+        }
+        
+        /// <summary>
+        /// Extract all faces from a WorldObject's bounding box and add them to the face list for per-face sorting
+        /// </summary>
+        private void AddWorldObjectBoundingBoxFaces(WorldObject worldObject, List<(Entity? entity, Vector2[] vertices, float depth, Color color)> faceList, float heightScale)
+        {
+            float halfWidth = worldObject.DiamondWidth / 2.0f;
+            float halfHeight = worldObject.DiamondHeight / 2.0f;
+            float zOffsetY = worldObject.ZHeight * heightScale;
+            
+            // Calculate object's base depth (same formula as entity sorting)
+            float zOffsetYForDepth = worldObject.ZHeight * heightScale;
+            float topFaceCenterY = worldObject.Position.Y - zOffsetYForDepth;
+            float objectBaseDepth = (worldObject.Position.X + topFaceCenterY) - (worldObject.ZHeight * 0.3f);
+            
+            // Add a unique offset based on position to ensure adjacent objects have distinct depths
+            // Use a hash of position to create a deterministic but unique offset
+            // Range: 0 to 0.01f - large enough to separate objects but small enough to not affect normal sorting
+            float positionHash = (worldObject.Position.X * 1000.0f + worldObject.Position.Y * 1000.0f) % 10000.0f;
+            float uniqueOffset = (positionHash / 10000.0f) * 0.01f;
+            objectBaseDepth += uniqueOffset;
+            
+            // Calculate all 8 vertices (same as Entity.GetBoundingBoxVertices3D)
+            Vector2[] vertices = new Vector2[8];
+            
+            // Bottom face vertices (z = 0)
+            vertices[0] = new Vector2(worldObject.Position.X, worldObject.Position.Y - halfHeight);
+            vertices[1] = new Vector2(worldObject.Position.X + halfWidth, worldObject.Position.Y);
+            vertices[2] = new Vector2(worldObject.Position.X, worldObject.Position.Y + halfHeight);
+            vertices[3] = new Vector2(worldObject.Position.X - halfWidth, worldObject.Position.Y);
+            
+            // Top face vertices (z = zHeight)
+            vertices[4] = new Vector2(worldObject.Position.X, worldObject.Position.Y - halfHeight - zOffsetY);
+            vertices[5] = new Vector2(worldObject.Position.X + halfWidth, worldObject.Position.Y - zOffsetY);
+            vertices[6] = new Vector2(worldObject.Position.X, worldObject.Position.Y + halfHeight - zOffsetY);
+            vertices[7] = new Vector2(worldObject.Position.X - halfWidth, worldObject.Position.Y - zOffsetY);
+            
+            // Get bounding box color from WorldObject
+            Color boxColor = worldObject.BoundingBoxColor;
+            
+            // For each face, use a fixed offset based on face type
+            // These offsets are small (0.0001f increments) and only affect face order within the same object
+            // The unique offset ensures different objects have distinct base depths
+            // Bottom face (draw first, most back)
+            Vector2[] bottomFace = new Vector2[] { vertices[0], vertices[1], vertices[2], vertices[3] };
+            faceList.Add((null, bottomFace, objectBaseDepth + 0.0000f, boxColor));
+            
+            // Top face (draw last, most forward)
+            Vector2[] topFace = new Vector2[] { vertices[4], vertices[5], vertices[6], vertices[7] };
+            faceList.Add((null, topFace, objectBaseDepth + 0.0005f, boxColor));
+            
+            // Side faces
+            Vector2[] side1 = new Vector2[] { vertices[0], vertices[1], vertices[5], vertices[4] };
+            faceList.Add((null, side1, objectBaseDepth + 0.0001f, boxColor));
+            
+            Vector2[] side2 = new Vector2[] { vertices[1], vertices[2], vertices[6], vertices[5] };
+            faceList.Add((null, side2, objectBaseDepth + 0.0002f, boxColor));
+            
+            Vector2[] side3 = new Vector2[] { vertices[2], vertices[3], vertices[7], vertices[6] };
+            faceList.Add((null, side3, objectBaseDepth + 0.0003f, boxColor));
+            
+            Vector2[] side4 = new Vector2[] { vertices[3], vertices[0], vertices[4], vertices[7] };
+            faceList.Add((null, side4, objectBaseDepth + 0.0004f, boxColor));
+        }
+        
+        /// <summary>
+        /// Extract all faces from an entity's bounding box and add them to the face list for per-face sorting
+        /// </summary>
+        private void AddBoundingBoxFaces(Entity entity, List<(Entity? entity, Vector2[] vertices, float depth, Color color)> faceList, float heightScale)
+        {
+            // Calculate object's base depth (same formula as entity sorting)
+            float zOffsetYForDepth = entity.ZHeight * heightScale;
+            float topFaceCenterY = entity.Position.Y - zOffsetYForDepth;
+            float objectBaseDepth = (entity.Position.X + topFaceCenterY) - (entity.ZHeight * 0.3f);
+            
+            // Add a unique offset based on position to ensure adjacent objects have distinct depths
+            // Use a hash of position to create a deterministic but unique offset
+            // Range: 0 to 0.01f - large enough to separate objects but small enough to not affect normal sorting
+            float positionHash = (entity.Position.X * 1000.0f + entity.Position.Y * 1000.0f) % 10000.0f;
+            float uniqueOffset = (positionHash / 10000.0f) * 0.01f;
+            objectBaseDepth += uniqueOffset;
+            
+            // Get all 8 vertices
+            Vector2[] vertices = entity.GetBoundingBoxVertices3D();
+            
+            // For each face, use a fixed offset based on face type
+            // These offsets are small (0.0001f increments) and only affect face order within the same object
+            // The unique offset ensures different objects have distinct base depths
+            // Bottom face: vertices 0,1,2,3 (draw first, most back)
+            Vector2[] bottomFace = new Vector2[] { vertices[0], vertices[1], vertices[2], vertices[3] };
+            faceList.Add((entity, bottomFace, objectBaseDepth + 0.0000f, entity.BoundingBoxColor));
+            
+            // Top face: vertices 4,5,6,7 (draw last, most forward)
+            Vector2[] topFace = new Vector2[] { vertices[4], vertices[5], vertices[6], vertices[7] };
+            faceList.Add((entity, topFace, objectBaseDepth + 0.0005f, entity.BoundingBoxColor));
+            
+            // Side faces (4 trapezoids connecting bottom to top)
+            // Side 1: bottomTop -> bottomRight -> topRight -> topTop
+            Vector2[] side1 = new Vector2[] { vertices[0], vertices[1], vertices[5], vertices[4] };
+            faceList.Add((entity, side1, objectBaseDepth + 0.0001f, entity.BoundingBoxColor));
+            
+            // Side 2: bottomRight -> bottomBottom -> topBottom -> topRight
+            Vector2[] side2 = new Vector2[] { vertices[1], vertices[2], vertices[6], vertices[5] };
+            faceList.Add((entity, side2, objectBaseDepth + 0.0002f, entity.BoundingBoxColor));
+            
+            // Side 3: bottomBottom -> bottomLeft -> topLeft -> topBottom
+            Vector2[] side3 = new Vector2[] { vertices[2], vertices[3], vertices[7], vertices[6] };
+            faceList.Add((entity, side3, objectBaseDepth + 0.0003f, entity.BoundingBoxColor));
+            
+            // Side 4: bottomLeft -> bottomTop -> topTop -> topLeft
+            Vector2[] side4 = new Vector2[] { vertices[3], vertices[0], vertices[4], vertices[7] };
+            faceList.Add((entity, side4, objectBaseDepth + 0.0004f, entity.BoundingBoxColor));
+        }
+        
+        /// <summary>
+        /// Draw a single bounding box face as a wireframe
+        /// </summary>
+        private void DrawBoundingBoxFace(SpriteBatch spriteBatch, Texture2D lineTexture, Vector2[] vertices, Color color)
+        {
+            if (vertices.Length < 2) return;
+            
+            // Draw lines between consecutive vertices, closing the polygon
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                int next = (i + 1) % vertices.Length;
+                DrawBoundingBoxLine(spriteBatch, lineTexture, vertices[i], vertices[next], color);
+            }
+        }
+        
+        /// <summary>
+        /// Draw a single line for a bounding box face
+        /// </summary>
+        private void DrawBoundingBoxLine(SpriteBatch spriteBatch, Texture2D texture, Vector2 start, Vector2 end, Color color)
+        {
+            Vector2 edge = end - start;
+            float length = edge.Length();
+            
+            if (length <= 0.1f) return;
+            
+            bool isMostlyVertical = Math.Abs(edge.Y) > Math.Abs(edge.X) * 10.0f && Math.Abs(edge.Y) > 0.1f;
+            const float boundingBoxLayerDepth = 0.99f;
+            const float thickness = 3.0f;
+            
+            if (isMostlyVertical)
+            {
+                float halfThickness = thickness / 2.0f;
+                float minY = Math.Min(start.Y, end.Y);
+                float maxY = Math.Max(start.Y, end.Y);
+                float centerX = (start.X + end.X) / 2.0f;
+                
+                Rectangle destRect = new Rectangle(
+                    (int)(centerX - halfThickness),
+                    (int)minY,
+                    (int)thickness,
+                    (int)(maxY - minY)
+                );
+                spriteBatch.Draw(texture, destRect, null, color, 0f, Vector2.Zero, SpriteEffects.None, boundingBoxLayerDepth);
+            }
+            else
+            {
+                float angle = (float)Math.Atan2(edge.Y, edge.X);
+                spriteBatch.Draw(
+                    texture,
+                    start,
+                    null,
+                    color,
+                    angle,
+                    new Vector2(0, 0.5f),
+                    new Vector2(length, thickness),
+                    SpriteEffects.None,
+                    boundingBoxLayerDepth
+                );
+            }
         }
         
         private void DrawBloodSplat(SpriteBatch spriteBatch, Vector2 position)

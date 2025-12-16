@@ -170,12 +170,12 @@ namespace Project9
             
             if (isNewRightClick && !isOverUI)
             {
-                Console.WriteLine($"[InputManager] Right mouse clicked at ({mouseWorldPos.X:F0}, {mouseWorldPos.Y:F0})");
+                LogOverlay.Log($"[InputManager] Right mouse clicked at ({mouseWorldPos.X:F0}, {mouseWorldPos.Y:F0})", LogLevel.Debug);
                 
                 // Check if click is on or near an enemy
                 Enemy? targetEnemy = null;
                 float closestEnemyDistance = float.MaxValue;
-                const float clickRadius = 40.0f; // Click detection radius for enemies
+                const float clickRadius = GameConfig.ClickDetectionRadius;
                 
                 foreach (var enemy in enemies)
                 {
@@ -298,11 +298,11 @@ namespace Project9
                 // Ignore clicks on UI elements
                 if (isOverUI)
                 {
-                    Console.WriteLine($"[InputManager] Click ignored - over UI at ({mouseScreenPos.X:F0}, {mouseScreenPos.Y:F0})");
+                    LogOverlay.Log($"[InputManager] Click ignored - over UI at ({mouseScreenPos.X:F0}, {mouseScreenPos.Y:F0})", LogLevel.Debug);
                 }
                 else
                 {
-                    Console.WriteLine($"[InputManager] Mouse clicked at ({mouseWorldPos.X:F0}, {mouseWorldPos.Y:F0}) (new={isNewClick}, rapid={isRapidClick})");
+                    LogOverlay.Log($"[InputManager] Mouse clicked at ({mouseWorldPos.X:F0}, {mouseWorldPos.Y:F0}) (new={isNewClick}, rapid={isRapidClick})", LogLevel.Debug);
                     
                     // Reset drag state on new click
                     _isDragging = false;
@@ -359,7 +359,7 @@ namespace Project9
                 
                 if (dragDistance > DRAG_THRESHOLD && !_isDragging)
                 {
-                    Console.WriteLine("[InputManager] Entered drag mode");
+                    LogOverlay.Log("[InputManager] Entered drag mode", LogLevel.Debug);
                     _isDragging = true;
                 }
 
@@ -378,14 +378,14 @@ namespace Project9
             {
                 if (_isDragging)
                 {
-                    Console.WriteLine("[InputManager] Drag ended");
+                    LogOverlay.Log("[InputManager] Drag ended", LogLevel.Debug);
                     _isDragging = false;
                     // Return a special event to clear player target
                     inputEvent = new InputEvent { Action = InputAction.None };
                 }
                 else
                 {
-                    Console.WriteLine("[InputManager] Click released (not dragging) - single click move should have been processed");
+                    LogOverlay.Log("[InputManager] Click released (not dragging) - single click move should have been processed", LogLevel.Debug);
                     // Don't return an event - the MoveTo was already sent on click
                 }
                 
@@ -440,8 +440,8 @@ namespace Project9
         /// </summary>
         private Enemy? FindAttackableEnemy(Vector2 clickPos, Player player, System.Collections.Generic.List<Enemy> enemies)
         {
-            const float playerAttackRange = 80.0f;
-            const float clickRadius = 30.0f; // Reduced - must click closer to enemy
+            const float playerAttackRange = GameConfig.MeleeAttackRange;
+            const float clickRadius = GameConfig.VeryCloseRange; // Reduced - must click closer to enemy
 
             foreach (var enemy in enemies)
             {

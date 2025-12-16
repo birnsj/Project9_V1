@@ -67,7 +67,7 @@ namespace Project9
         public void Toggle()
         {
             _isVisible = !_isVisible;
-            Console.WriteLine($"[Diagnostics] Overlay {(_isVisible ? "enabled" : "disabled")}");
+            LogOverlay.Log($"[Diagnostics] Overlay {(_isVisible ? "enabled" : "disabled")}", LogLevel.Info);
         }
         
         public void Show() => _isVisible = true;

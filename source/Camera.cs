@@ -290,7 +290,7 @@ namespace Project9
             // First detection always alerts immediately, subsequent detections respect cooldown
             if (detectedThisFrame && (isFirstDetection || _lastAlertTime >= _alertCooldown))
             {
-                Console.WriteLine($"[Camera] Detected player! Calling AlertNearbyEnemies. First detection: {isFirstDetection}");
+                LogOverlay.Log($"[Camera] Detected player! Calling AlertNearbyEnemies. First detection: {isFirstDetection}", LogLevel.Info);
                 AlertNearbyEnemies(enemies, playerPosition);
                 _lastAlertTime = 0.0f;
                 return true;
@@ -306,17 +306,17 @@ namespace Project9
         {
             int alertedCount = 0;
             int totalEnemies = enemies.Count;
-            Console.WriteLine($"[Camera] Checking {totalEnemies} enemies for alert, camera at ({_position.X:F1}, {_position.Y:F1}), alert radius: {_alertRadius:F1}");
+            LogOverlay.Log($"[Camera] Checking {totalEnemies} enemies for alert, camera at ({_position.X:F1}, {_position.Y:F1}), alert radius: {_alertRadius:F1}", LogLevel.Debug);
             
             foreach (var enemy in enemies)
             {
                 float distanceToEnemy = Vector2.Distance(_position, enemy.Position);
-                Console.WriteLine($"[Camera] Enemy at ({enemy.Position.X:F1}, {enemy.Position.Y:F1}), distance: {distanceToEnemy:F1}");
+                LogOverlay.Log($"[Camera] Enemy at ({enemy.Position.X:F1}, {enemy.Position.Y:F1}), distance: {distanceToEnemy:F1}", LogLevel.Debug);
                 
                 if (distanceToEnemy <= _alertRadius)
                 {
                     // Force enemy to detect player
-                    Console.WriteLine($"[Camera] Alerting enemy at distance {distanceToEnemy:F1}");
+                    LogOverlay.Log($"[Camera] Alerting enemy at distance {distanceToEnemy:F1}", LogLevel.Debug);
                     enemy.ForceDetectPlayer(playerPosition);
                     alertedCount++;
                 }
@@ -324,12 +324,12 @@ namespace Project9
             
             if (alertedCount > 0)
             {
-                Console.WriteLine($"[Camera] SUCCESS: Alerted {alertedCount} enemies within {_alertRadius:F0}px radius");
+                LogOverlay.Log($"[Camera] SUCCESS: Alerted {alertedCount} enemies within {_alertRadius:F0}px radius", LogLevel.Info);
                 LogOverlay.Log($"[Camera] ALERT! {alertedCount} enemies alerted", LogLevel.Warning);
             }
             else
             {
-                Console.WriteLine($"[Camera] No enemies within alert radius");
+                LogOverlay.Log($"[Camera] No enemies within alert radius", LogLevel.Debug);
             }
         }
 

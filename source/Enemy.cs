@@ -56,19 +56,6 @@ namespace Project9
         private Vector2 _cachedDirection;
         private float _lastRotation = float.MinValue;
         
-        // Pre-allocated static array to avoid allocations (matches 2:1 aspect ratio of isometric tiles)
-        private static readonly Vector2[] IsometricAxesStatic = new Vector2[]
-        {
-            new Vector2(1, 0),            // East
-            new Vector2(0, 1),            // South
-            new Vector2(-1, 0),           // West
-            new Vector2(0, -1),           // North
-            new Vector2(0.894f, 0.447f),  // Southeast (isometric diagonal)
-            new Vector2(0.894f, -0.447f), // Northeast (isometric diagonal)
-            new Vector2(-0.894f, 0.447f), // Southwest (isometric diagonal)
-            new Vector2(-0.894f, -0.447f) // Northwest (isometric diagonal)
-        };
-        
         public float Rotation => _rotation;
         
         /// <summary>
@@ -126,13 +113,13 @@ namespace Project9
         public void ForceDetectPlayer(Vector2 playerPosition)
         {
             // Always set detection, even if already detected (refreshes the alert)
-            Console.WriteLine($"[Enemy] ForceDetectPlayer called at ({_position.X:F1}, {_position.Y:F1}). Was detected: {_hasDetectedPlayer}");
+            LogOverlay.Log($"[Enemy] ForceDetectPlayer called at ({_position.X:F1}, {_position.Y:F1}). Was detected: {_hasDetectedPlayer}", LogLevel.Debug);
             _hasDetectedPlayer = true;
             _exclamationTimer = _exclamationDuration;
             _lastKnownPlayerPosition = playerPosition; // Set last known position so enemy knows where to go
             _isSearching = false; // Stop searching if we're alerted
             _searchTimer = 0.0f; // Reset search timer
-            Console.WriteLine($"[Enemy] Now HasDetectedPlayer = {_hasDetectedPlayer}, lastKnownPos = ({_lastKnownPlayerPosition.X:F1}, {_lastKnownPlayerPosition.Y:F1})");
+            LogOverlay.Log($"[Enemy] Now HasDetectedPlayer = {_hasDetectedPlayer}, lastKnownPos = ({_lastKnownPlayerPosition.X:F1}, {_lastKnownPlayerPosition.Y:F1})", LogLevel.Debug);
         }
         
         /// <summary>
@@ -353,24 +340,9 @@ namespace Project9
         public void Update(Vector2 playerPosition, float deltaTime, bool playerIsSneaking = false, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, Func<Vector2, bool>? checkTerrainOnly = null, bool alarmActive = false, bool playerIsAlive = true)
         {
             UpdateFlashing(deltaTime);
-            
-            // Update knockback/stun timer
-            if (_knockbackTimer > 0.0f)
-            {
-                _knockbackTimer -= deltaTime;
-                if (_knockbackTimer < 0.0f)
-                    _knockbackTimer = 0.0f;
-            }
-
-            if (_currentAttackCooldown > 0.0f)
-            {
-                _currentAttackCooldown -= deltaTime;
-            }
-
-            if (_exclamationTimer > 0.0f)
-            {
-                _exclamationTimer -= deltaTime;
-            }
+            UpdateKnockback(deltaTime);
+            UpdateAttackState(deltaTime);
+            UpdateExclamationTimer(deltaTime);
 
             // If player is dead, return to original position and clear detection
             if (!playerIsAlive)
@@ -384,6 +356,60 @@ namespace Project9
                 return;
             }
 
+            bool hasLineOfSight = UpdateDetection(playerPosition, playerIsSneaking, checkLineOfSight, alarmActive, deltaTime);
+
+            // If stunned, don't move or attack
+            if (IsStunned)
+            {
+                _currentSpeed = 0.0f;
+                _isAttacking = false;
+                return; // Skip all AI behavior while stunned
+            }
+            
+            UpdateChaseBehavior(playerPosition, hasLineOfSight, alarmActive, deltaTime, checkCollision, collisionManager, checkTerrainOnly);
+        }
+        
+        /// <summary>
+        /// Update knockback/stun timer
+        /// </summary>
+        private void UpdateKnockback(float deltaTime)
+        {
+            if (_knockbackTimer > 0.0f)
+            {
+                _knockbackTimer -= deltaTime;
+                if (_knockbackTimer < 0.0f)
+                    _knockbackTimer = 0.0f;
+            }
+        }
+        
+        /// <summary>
+        /// Update attack cooldown and state
+        /// </summary>
+        private void UpdateAttackState(float deltaTime)
+        {
+            if (_currentAttackCooldown > 0.0f)
+            {
+                _currentAttackCooldown -= deltaTime;
+            }
+        }
+        
+        /// <summary>
+        /// Update exclamation mark timer
+        /// </summary>
+        private void UpdateExclamationTimer(float deltaTime)
+        {
+            if (_exclamationTimer > 0.0f)
+            {
+                _exclamationTimer -= deltaTime;
+            }
+        }
+        
+        /// <summary>
+        /// Update player detection logic
+        /// Returns whether enemy has line of sight to player
+        /// </summary>
+        private bool UpdateDetection(Vector2 playerPosition, bool playerIsSneaking, Func<Vector2, Vector2, bool>? checkLineOfSight, bool alarmActive, float deltaTime)
+        {
             Vector2 directionToPlayer = playerPosition - _position;
             float distanceToPlayerSquared = directionToPlayer.LengthSquared();
 
@@ -464,14 +490,17 @@ namespace Project9
                     _path?.Clear();
                 }
             }
-
-            // If stunned, don't move or attack
-            if (IsStunned)
-            {
-                _currentSpeed = 0.0f;
-                _isAttacking = false;
-                return; // Skip all AI behavior while stunned
-            }
+            
+            return hasLineOfSight;
+        }
+        
+        /// <summary>
+        /// Update chase behavior - decides whether to chase, attack, search, or patrol
+        /// </summary>
+        private void UpdateChaseBehavior(Vector2 playerPosition, bool hasLineOfSight, bool alarmActive, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly)
+        {
+            Vector2 directionToPlayer = playerPosition - _position;
+            float distanceToPlayerSquared = directionToPlayer.LengthSquared();
             
             // If enemy has detected player (either directly or via camera alert), chase them
             // Use a large chase range when alerted (1024 pixels, same as camera alert radius)
@@ -513,7 +542,7 @@ namespace Project9
             if (_hasDetectedPlayer && !shouldChase)
             {
                 float distanceToPlayer = (float)Math.Sqrt(distanceToPlayerSquared); // Only calculate for logging
-                Console.WriteLine($"[Enemy] HasDetectedPlayer=true but not chasing. isSearching={_isSearching}, distance={distanceToPlayer:F1}, maxRange={maxChaseRange}, hasLoS={hasLineOfSight}, alarmActive={alarmActive}, outOfRangeTimer={_outOfRangeTimer:F2}");
+                LogOverlay.Log($"[Enemy] HasDetectedPlayer=true but not chasing. isSearching={_isSearching}, distance={distanceToPlayer:F1}, maxRange={maxChaseRange}, hasLoS={hasLineOfSight}, alarmActive={alarmActive}, outOfRangeTimer={_outOfRangeTimer:F2}", LogLevel.Debug);
             }
             
             if (shouldChase)
@@ -572,7 +601,7 @@ namespace Project9
 
             // Use terrain-only check for direct path validation (like player)
             Func<Vector2, bool> terrainCheck = checkTerrainOnly ?? ((pos) => checkCollision != null ? checkCollision(pos) : false);
-            bool pathClear = CheckDirectPath(target, terrainCheck);
+            bool pathClear = PathfindingHelper.CheckDirectPath(_position, target, terrainCheck);
             
             // Recalculate path if blocked or if path is empty/invalid
             // Use terrain-only collision for pathfinding - enemy collision handled during movement
@@ -632,7 +661,7 @@ namespace Project9
             {
                 // Use terrain-only check for pathfinding
                 Func<Vector2, bool> terrainCheck = checkTerrainOnly ?? ((pos) => checkCollision != null ? checkCollision(pos) : false);
-                bool pathClear = CheckDirectPath(_originalPosition, terrainCheck);
+                bool pathClear = PathfindingHelper.CheckDirectPath(_position, _originalPosition, terrainCheck);
                 
                 // If stuck for too long, always try pathfinding to avoid deadlocks with other enemies
                 bool shouldUsePathfinding = !pathClear || (_stuckTimer > 0.2f && checkTerrainOnly != null);
@@ -743,7 +772,7 @@ namespace Project9
             {
                 // Use terrain-only check for pathfinding
                 Func<Vector2, bool> terrainCheck = checkTerrainOnly ?? ((pos) => checkCollision != null ? checkCollision(pos) : false);
-                bool pathClear = CheckDirectPath(_originalPosition, terrainCheck);
+                bool pathClear = PathfindingHelper.CheckDirectPath(_position, _originalPosition, terrainCheck);
                 
                 // If stuck for too long, always try pathfinding to avoid deadlocks with other enemies
                 bool shouldUsePathfinding = !pathClear || (_stuckTimer > 0.2f && checkTerrainOnly != null);
@@ -818,36 +847,6 @@ namespace Project9
             }
         }
 
-        private bool CheckDirectPath(Vector2 target, Func<Vector2, bool>? checkCollision)
-        {
-            return CheckDirectPath(_position, target, checkCollision);
-        }
-        
-        private bool CheckDirectPath(Vector2 from, Vector2 target, Func<Vector2, bool>? checkCollision)
-        {
-            if (checkCollision == null) return true;
-            
-            Vector2 direction = target - from;
-            float distanceSquared = direction.LengthSquared();
-            // Use denser sampling (every 8 pixels) like player to catch more obstacles
-            float distance = (float)Math.Sqrt(distanceSquared); // Need actual distance for sampling calculation
-            int samples = Math.Max(3, (int)(distance / 8.0f) + 1);
-            
-            for (int i = 0; i <= samples; i++)
-            {
-                float t = (float)i / samples;
-                // Skip exact start and end to avoid checking current position
-                if (t < 0.001f || t > 0.999f)
-                    continue;
-                    
-                Vector2 samplePoint = from + (target - from) * t;
-                if (checkCollision(samplePoint))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
 
         private void FollowPath(Vector2 finalTarget, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, Func<Vector2, bool>? checkTerrainOnly = null, bool faceFinalTarget = false, bool includeEnemies = true)
         {
@@ -879,7 +878,7 @@ namespace Project9
                     
                     // Check if path to this waypoint is clear
                     Func<Vector2, bool> terrainCheck = checkTerrainOnly;
-                    if (!CheckDirectPath(checkFrom, waypointToCheck, terrainCheck))
+                    if (!PathfindingHelper.CheckDirectPath(checkFrom, waypointToCheck, terrainCheck))
                     {
                         pathAheadBlocked = true;
                         break;
@@ -1063,7 +1062,7 @@ namespace Project9
                         
                         if (_stuckTimer > STUCK_THRESHOLD && checkTerrainOnly != null)
                         {
-                            Console.WriteLine("[Enemy] Stuck for too long, recalculating path");
+                            LogOverlay.Log("[Enemy] Stuck for too long, recalculating path", LogLevel.Debug);
                             _path = PathfindingService.FindPath(
                                 _position, 
                                 target, 
@@ -1096,7 +1095,7 @@ namespace Project9
                 }
                 else
                 {
-                    Vector2 slidePosition = TrySlideAlongCollision(_position, newPosition, direction, moveDistance, checkCollision);
+                    Vector2 slidePosition = PathfindingHelper.TrySlideAlongCollision(_position, newPosition, direction, moveDistance, checkCollision);
                     if (slidePosition != _position)
                     {
                         _position = slidePosition;
@@ -1108,7 +1107,7 @@ namespace Project9
                         
                         if (_stuckTimer > STUCK_THRESHOLD && checkTerrainOnly != null)
                         {
-                            Console.WriteLine("[Enemy] Stuck for too long, recalculating path");
+                            LogOverlay.Log("[Enemy] Stuck for too long, recalculating path", LogLevel.Debug);
                             _path = PathfindingService.FindPath(
                                 _position, 
                                 target, 
@@ -1137,67 +1136,6 @@ namespace Project9
             }
         }
 
-        private Vector2 TrySlideAlongCollision(Vector2 currentPos, Vector2 targetPos, Vector2 direction, float moveDistance, Func<Vector2, bool>? checkCollision)
-        {
-            if (checkCollision == null) return currentPos;
-            
-            Vector2 movement = targetPos - currentPos;
-            
-            if (movement.LengthSquared() < 0.001f)
-                return currentPos;
-            
-            // Isometric-aware slide directions (aligned with diamond collision cells)
-            direction.Normalize();
-            
-            // Find which isometric axis is most aligned with our movement
-            int bestAxis = 0;
-            float bestDot = float.MinValue;
-            for (int i = 0; i < IsometricAxesStatic.Length; i++)
-            {
-                float dot = Vector2.Dot(direction, IsometricAxesStatic[i]);
-                if (dot > bestDot)
-                {
-                    bestDot = dot;
-                    bestAxis = i;
-                }
-            }
-            
-            // Try perpendicular isometric directions (left and right of movement)
-            int[] perpAxes = new int[]
-            {
-                (bestAxis + 2) % 8,  // 90 degrees right
-                (bestAxis + 6) % 8   // 90 degrees left (counter-clockwise)
-            };
-            
-            // Try sliding along isometric axes at various scales
-            float[] scales = { 1.0f, 0.8f, 0.6f, 0.4f, 0.3f };
-            
-            foreach (int axisIndex in perpAxes)
-            {
-                Vector2 slideDir = IsometricAxesStatic[axisIndex];
-                
-                foreach (float scale in scales)
-                {
-                    // Pure slide along isometric axis
-                    Vector2 testPos = currentPos + slideDir * (moveDistance * scale);
-                    if (!checkCollision(testPos))
-                    {
-                        return testPos;
-                    }
-                    
-                    // Blended slide (original direction + isometric axis)
-                    Vector2 blendedDir = (direction * 0.5f + slideDir * 0.5f);
-                    blendedDir.Normalize();
-                    testPos = currentPos + blendedDir * (moveDistance * scale);
-                    if (!checkCollision(testPos))
-                    {
-                        return testPos;
-                    }
-                }
-            }
-            
-            return currentPos;
-        }
 
         public void DrawAggroRadius(SpriteBatch spriteBatch, float effectiveRange)
         {

@@ -18,15 +18,18 @@ namespace Project9
         private List<IsometricTile> _tiles;
         private Dictionary<TerrainType, Texture2D> _terrainTextures;
         private MapData? _mapData;
+        private List<WorldObject> _worldObjects;
 
         private GraphicsDevice _graphicsDevice;
 
         public MapData? MapData => _mapData;
+        public List<WorldObject> WorldObjects => _worldObjects;
 
         public IsometricMap(ContentManager content, GraphicsDevice graphicsDevice)
         {
             _tiles = new List<IsometricTile>();
             _terrainTextures = new Dictionary<TerrainType, Texture2D>();
+            _worldObjects = new List<WorldObject>();
             _graphicsDevice = graphicsDevice;
             LoadTextures(content);
             LoadMap();
@@ -51,18 +54,18 @@ namespace Project9
                     pngPath = $"Content/sprites/tiles/template/{terrainType}.png";
                 }
                 
-                Console.WriteLine($"[IsometricMap] Loading texture: {texturePath}");
+                LogOverlay.Log($"[IsometricMap] Loading texture: {texturePath}", LogLevel.Debug);
                 Texture2D? loadedTexture = null;
                 
                 // First, try loading from ContentManager (XNB file)
                 try
                 {
                     loadedTexture = content.Load<Texture2D>(texturePath);
-                    Console.WriteLine($"[IsometricMap] Successfully loaded {terrainType} from XNB - Size: {loadedTexture.Width}x{loadedTexture.Height}");
+                    LogOverlay.Log($"[IsometricMap] Successfully loaded {terrainType} from XNB - Size: {loadedTexture.Width}x{loadedTexture.Height}", LogLevel.Info);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[IsometricMap] Failed to load {terrainType} from XNB ({texturePath}): {ex.Message}");
+                    LogOverlay.Log($"[IsometricMap] Failed to load {terrainType} from XNB ({texturePath}): {ex.Message}", LogLevel.Warning);
                     
                     // If XNB doesn't exist, try loading PNG directly (automatic conversion on load)
                     string? resolvedPngPath = ResolveTexturePath(pngPath);
@@ -73,17 +76,17 @@ namespace Project9
                             using (FileStream fileStream = new FileStream(resolvedPngPath, FileMode.Open, FileAccess.Read))
                             {
                                 loadedTexture = Texture2D.FromStream(_graphicsDevice, fileStream);
-                                Console.WriteLine($"[IsometricMap] Successfully loaded {terrainType} from PNG (auto-converted) - Size: {loadedTexture.Width}x{loadedTexture.Height}");
+                                LogOverlay.Log($"[IsometricMap] Successfully loaded {terrainType} from PNG (auto-converted) - Size: {loadedTexture.Width}x{loadedTexture.Height}", LogLevel.Info);
                             }
                         }
                         catch (Exception pngEx)
                         {
-                            Console.WriteLine($"[IsometricMap] Failed to load {terrainType} from PNG ({resolvedPngPath}): {pngEx.Message}");
+                            LogOverlay.Log($"[IsometricMap] Failed to load {terrainType} from PNG ({resolvedPngPath}): {pngEx.Message}", LogLevel.Warning);
                         }
                     }
                     else
                     {
-                        Console.WriteLine($"[IsometricMap] PNG file not found: {pngPath}");
+                        LogOverlay.Log($"[IsometricMap] PNG file not found: {pngPath}", LogLevel.Debug);
                     }
                 }
                 
@@ -94,7 +97,7 @@ namespace Project9
                 }
                 else
                 {
-                    Console.WriteLine($"[IsometricMap] Creating placeholder texture for {terrainType}");
+                    LogOverlay.Log($"[IsometricMap] Creating placeholder texture for {terrainType}", LogLevel.Warning);
                     Texture2D placeholder = new Texture2D(_graphicsDevice, 1, 1);
                     placeholder.SetData(new[] { Color.Magenta });
                     _terrainTextures[terrainType] = placeholder;
@@ -174,23 +177,35 @@ namespace Project9
                             }
                         }
                         
-                        Console.WriteLine($"[IsometricMap] Loaded map from {resolvedPath}: {_mapWidth}x{_mapHeight}, {_tiles.Count} tiles, {mapData.Enemies?.Count ?? 0} enemies");
+                        // Load world objects (furniture)
+                        _worldObjects.Clear();
+                        if (mapData.WorldObjects != null)
+                        {
+                            foreach (var worldObjectData in mapData.WorldObjects)
+                            {
+                                var worldObject = new WorldObject(worldObjectData);
+                                worldObject.CreateDiamondTexture(_graphicsDevice);
+                                _worldObjects.Add(worldObject);
+                            }
+                        }
+                        
+                        LogOverlay.Log($"[IsometricMap] Loaded map from {resolvedPath}: {_mapWidth}x{_mapHeight}, {_tiles.Count} tiles, {mapData.Enemies?.Count ?? 0} enemies, {_worldObjects.Count} world objects", LogLevel.Info);
                     }
                     else
                     {
-                        Console.WriteLine($"[IsometricMap] Failed to load map from {mapPath}, creating default map");
+                        LogOverlay.Log($"[IsometricMap] Failed to load map from {mapPath}, creating default map", LogLevel.Warning);
                         CreateDefaultMap();
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[IsometricMap] Error loading map from {resolvedPath}: {ex.Message}");
+                    LogOverlay.Log($"[IsometricMap] Error loading map from {resolvedPath}: {ex.Message}", LogLevel.Error);
                     CreateDefaultMap();
                 }
             }
             else
             {
-                Console.WriteLine($"[IsometricMap] Map file not found at {resolvedPath}, creating default map");
+                LogOverlay.Log($"[IsometricMap] Map file not found at {resolvedPath}, creating default map", LogLevel.Warning);
                 CreateDefaultMap();
             }
             

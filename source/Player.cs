@@ -472,6 +472,22 @@ namespace Project9
 
         public override void Update(float deltaTime)
         {
+            UpdateDeathState(deltaTime);
+            
+            // Don't update movement when dead
+            if (_isDead)
+            {
+                return;
+            }
+            
+            Update(null, deltaTime, null, null);
+        }
+        
+        /// <summary>
+        /// Update death state and respawn timer
+        /// </summary>
+        private void UpdateDeathState(float deltaTime)
+        {
             // Check if player just died
             if (!_isDead && !IsAlive)
             {
@@ -483,21 +499,8 @@ namespace Project9
             // Update death animation and respawn timer if dead
             if (_isDead)
             {
-                _deathPulseTimer += deltaTime * _deathPulseSpeed;
-                
-                // Update respawn countdown
-                if (_respawnTimer > 0.0f)
-                {
-                    _respawnTimer -= deltaTime;
-                    if (_respawnTimer <= 0.0f)
-                    {
-                        Respawn();
-                    }
-                }
-                return; // Don't update movement when dead
+                UpdateDeathAnimation(deltaTime);
             }
-            
-            Update(null, deltaTime, null, null);
         }
         
         /// <summary>
@@ -549,12 +552,12 @@ namespace Project9
         {
             _spawnPosition = spawnPosition;
         }
-
-        public void Update(Vector2? followPosition, float deltaTime, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, System.Collections.Generic.IEnumerable<Enemy>? specificEnemies = null)
+        
+        /// <summary>
+        /// Update sword swing animation
+        /// </summary>
+        private void UpdateSwordSwing(float deltaTime)
         {
-            UpdateFlashing(deltaTime);
-            
-            // Update sword swing animation
             if (_isSwingingSword)
             {
                 _swordSwingTimer -= deltaTime;
@@ -571,15 +574,35 @@ namespace Project9
                     _swordSwingAngle = MathHelper.Lerp(-MathHelper.PiOver4, MathHelper.PiOver4, swingProgress); // -45 to +45 degrees
                 }
             }
-            
-            // Update fire cooldown
+        }
+        
+        /// <summary>
+        /// Update fire cooldown timer
+        /// </summary>
+        private void UpdateFireCooldown(float deltaTime)
+        {
             if (_fireCooldownTimer > 0.0f)
             {
                 _fireCooldownTimer -= deltaTime;
                 if (_fireCooldownTimer < 0.0f)
                     _fireCooldownTimer = 0.0f;
             }
+        }
 
+        public void Update(Vector2? followPosition, float deltaTime, Func<Vector2, bool>? checkCollision = null, Func<Vector2, Vector2, bool>? checkLineOfSight = null, CollisionManager? collisionManager = null, System.Collections.Generic.IEnumerable<Enemy>? specificEnemies = null)
+        {
+            UpdateFlashing(deltaTime);
+            UpdateSwordSwing(deltaTime);
+            UpdateFireCooldown(deltaTime);
+            
+            UpdateMovement(followPosition, deltaTime, checkCollision, collisionManager, specificEnemies);
+        }
+        
+        /// <summary>
+        /// Update player movement, pathfinding, and collision handling
+        /// </summary>
+        private void UpdateMovement(Vector2? followPosition, float deltaTime, Func<Vector2, bool>? checkCollision, CollisionManager? collisionManager, System.Collections.Generic.IEnumerable<Enemy>? specificEnemies)
+        {
             Vector2? moveTarget = null;
 
             if (followPosition.HasValue)
@@ -657,7 +680,7 @@ namespace Project9
                                 Vector2 checkFrom = i == 0 ? _position : _path[i - 1];
                                 
                                 // Check if path to this waypoint is clear
-                                if (!CheckDirectPath(checkFrom, waypointToCheck, checkCollision))
+                                if (!PathfindingHelper.CheckDirectPath(checkFrom, waypointToCheck, checkCollision))
                                 {
                                     pathAheadBlocked = true;
                                     break;
@@ -894,7 +917,7 @@ namespace Project9
                             }
                             else
                             {
-                                Vector2 slidePosition = TrySlideAlongCollision(_position, nextPosition, direction, moveDistance, checkCollision);
+                                Vector2 slidePosition = PathfindingHelper.TrySlideAlongCollision(_position, nextPosition, direction, moveDistance, checkCollision);
                                 if (slidePosition != _position)
                                 {
                                     _position = slidePosition;
@@ -951,7 +974,7 @@ namespace Project9
                             }
                         }
                         
-                        Vector2 slidePosition = TrySlideAlongCollision(_position, nextPosition, direction, moveDistance, checkCollision);
+                        Vector2 slidePosition = PathfindingHelper.TrySlideAlongCollision(_position, nextPosition, direction, moveDistance, checkCollision);
                         if (slidePosition != _position)
                         {
                             _position = slidePosition;
@@ -987,109 +1010,6 @@ namespace Project9
             }
         }
 
-        /// <summary>
-        /// Check if there's a direct path between two points (no obstacles)
-        /// </summary>
-        private bool CheckDirectPath(Vector2 from, Vector2 target, Func<Vector2, bool>? checkCollision)
-        {
-            if (checkCollision == null) return true;
-            
-            Vector2 direction = target - from;
-            float distanceSquared = direction.LengthSquared();
-            // Use denser sampling (every 8 pixels) to catch more obstacles
-            float distance = (float)Math.Sqrt(distanceSquared);
-            int samples = Math.Max(3, (int)(distance / 8.0f) + 1);
-            
-            for (int i = 0; i <= samples; i++)
-            {
-                float t = (float)i / samples;
-                // Skip exact start and end to avoid checking current position
-                if (t < 0.001f || t > 0.999f)
-                    continue;
-                    
-                Vector2 samplePoint = from + (target - from) * t;
-                if (checkCollision(samplePoint))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-        
-        private Vector2 TrySlideAlongCollision(Vector2 currentPos, Vector2 targetPos, Vector2 direction, float moveDistance, Func<Vector2, bool>? checkCollision)
-        {
-            if (checkCollision == null) return currentPos;
-            
-            Vector2 movement = targetPos - currentPos;
-            
-            if (movement.LengthSquared() < 0.001f)
-                return currentPos;
-            
-            // Isometric-aware slide directions (aligned with diamond collision cells)
-            // These match the 2:1 aspect ratio of isometric tiles
-            Vector2[] isometricAxes = new Vector2[]
-            {
-                new Vector2(1, 0),            // East
-                new Vector2(0, 1),            // South
-                new Vector2(-1, 0),           // West
-                new Vector2(0, -1),           // North
-                new Vector2(0.894f, 0.447f),  // Southeast (isometric diagonal)
-                new Vector2(0.894f, -0.447f), // Northeast (isometric diagonal)
-                new Vector2(-0.894f, 0.447f), // Southwest (isometric diagonal)
-                new Vector2(-0.894f, -0.447f) // Northwest (isometric diagonal)
-            };
-            
-            direction.Normalize();
-            
-            // Find which isometric axis is most aligned with our movement
-            int bestAxis = 0;
-            float bestDot = float.MinValue;
-            for (int i = 0; i < isometricAxes.Length; i++)
-            {
-                float dot = Vector2.Dot(direction, isometricAxes[i]);
-                if (dot > bestDot)
-                {
-                    bestDot = dot;
-                    bestAxis = i;
-                }
-            }
-            
-            // Try perpendicular isometric directions (left and right of movement)
-            int[] perpAxes = new int[]
-            {
-                (bestAxis + 2) % 8,  // 90 degrees right
-                (bestAxis + 6) % 8   // 90 degrees left (counter-clockwise)
-            };
-            
-            // Try sliding along isometric axes at various scales
-            float[] scales = { 1.0f, 0.8f, 0.6f, 0.4f, 0.3f };
-            
-            foreach (int axisIndex in perpAxes)
-            {
-                Vector2 slideDir = isometricAxes[axisIndex];
-                
-                foreach (float scale in scales)
-                {
-                    // Pure slide along isometric axis
-                    Vector2 testPos = currentPos + slideDir * (moveDistance * scale);
-                    if (!checkCollision(testPos))
-                    {
-                        return testPos;
-                    }
-                    
-                    // Blended slide (original direction + isometric axis)
-                    Vector2 blendedDir = (direction * 0.5f + slideDir * 0.5f);
-                    blendedDir.Normalize();
-                    testPos = currentPos + blendedDir * (moveDistance * scale);
-                    if (!checkCollision(testPos))
-                    {
-                        return testPos;
-                    }
-                }
-            }
-            
-            return currentPos;
-        }
 
         public override void Draw(SpriteBatch spriteBatch)
         {

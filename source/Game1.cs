@@ -128,7 +128,7 @@ namespace Project9
             }
             else
             {
-                Console.WriteLine("[Game] Warning: UI font not loaded - log overlay will not display");
+                LogOverlay.Log("[Game] Warning: UI font not loaded - log overlay will not display", LogLevel.Warning);
             }
 
             // Pre-create all entity textures (optimization: avoid creating textures during Draw)
@@ -355,17 +355,17 @@ namespace Project9
                     
                     case InputAction.ToggleCollisionSpheres:
                         _renderSystem.ShowCollisionSpheres = !_renderSystem.ShowCollisionSpheres;
-                        Console.WriteLine($"[Game] Collision spheres: {(_renderSystem.ShowCollisionSpheres ? "ON" : "OFF")}");
+                        LogOverlay.Log($"[Game] Collision spheres: {(_renderSystem.ShowCollisionSpheres ? "ON" : "OFF")}", LogLevel.Info);
                         break;
                     
                     case InputAction.ToggleBoundingBoxes:
                         _renderSystem.ShowBoundingBoxes = !_renderSystem.ShowBoundingBoxes;
-                        Console.WriteLine($"[Game] Bounding boxes: {(_renderSystem.ShowBoundingBoxes ? "ON" : "OFF")}");
+                        LogOverlay.Log($"[Game] Bounding boxes: {(_renderSystem.ShowBoundingBoxes ? "ON" : "OFF")}", LogLevel.Info);
                         break;
                     
                     case InputAction.TogglePath:
                         _renderSystem.ShowPath = !_renderSystem.ShowPath;
-                        Console.WriteLine($"[Game] Path debug: {(_renderSystem.ShowPath ? "ON" : "OFF")}");
+                        LogOverlay.Log($"[Game] Path debug: {(_renderSystem.ShowPath ? "ON" : "OFF")}", LogLevel.Info);
                         break;
                     
                     case InputAction.ToggleDiagnostics:
@@ -374,7 +374,7 @@ namespace Project9
                     
                     case InputAction.ResetDiagnostics:
                         _diagnostics.ResetFPSStats();
-                        Console.WriteLine("[Diagnostics] FPS stats reset");
+                        LogOverlay.Log("[Diagnostics] FPS stats reset", LogLevel.Info);
                         break;
                     
                     case InputAction.ToggleLog:
