@@ -312,6 +312,120 @@ namespace Project9.Shared
     }
 
     /// <summary>
+    /// Base class for world objects (furniture, decorations, etc.) in the map for JSON serialization
+    /// Uses the same bounding box style as enemies, players, and weapons
+    /// </summary>
+    public class WorldObject
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = "";
+        
+        [JsonPropertyName("x")]
+        public float X { get; set; }
+
+        [JsonPropertyName("y")]
+        public float Y { get; set; }
+        
+        // Legacy support: if X/Y are integers, treat as tile coordinates
+        [JsonIgnore]
+        public int TileX => (int)Math.Round(X);
+        
+        [JsonIgnore]
+        public int TileY => (int)Math.Round(Y);
+        
+        [JsonPropertyName("diamondWidth")]
+        public int DiamondWidth { get; set; } = 128; // Diamond width in pixels (default 128)
+        
+        [JsonPropertyName("diamondHeight")]
+        public int DiamondHeight { get; set; } = 64; // Diamond height in pixels (default 64)
+        
+        [JsonPropertyName("zHeight")]
+        public float ZHeight { get; set; } = 0.0f; // Z height for 3D isometric rendering (in divisions of 32)
+        
+        [JsonPropertyName("boundingBoxColorR")]
+        public byte BoundingBoxColorR { get; set; } = 255; // Red component (default yellow: 255)
+        
+        [JsonPropertyName("boundingBoxColorG")]
+        public byte BoundingBoxColorG { get; set; } = 255; // Green component (default yellow: 255)
+        
+        [JsonPropertyName("boundingBoxColorB")]
+        public byte BoundingBoxColorB { get; set; } = 0; // Blue component (default yellow: 0)
+        
+        [JsonPropertyName("boundingBoxOpacity")]
+        public float BoundingBoxOpacity { get; set; } = 0.3f; // Opacity (0.0 to 1.0, default 30%)
+    }
+
+    /// <summary>
+    /// Represents a chair furniture object
+    /// </summary>
+    public class ChairData : WorldObject
+    {
+        public ChairData()
+        {
+            Name = "Chair";
+            DiamondWidth = 64; // 2 tiles wide
+            DiamondHeight = 32; // 1 tile tall
+            ZHeight = 32.0f; // 1 division of 32
+        }
+    }
+
+    /// <summary>
+    /// Represents a table furniture object
+    /// </summary>
+    public class TableData : WorldObject
+    {
+        public TableData()
+        {
+            Name = "Table";
+            DiamondWidth = 128; // 4 tiles wide
+            DiamondHeight = 64; // 2 tiles tall
+            ZHeight = 64.0f; // 2 divisions of 32
+        }
+    }
+
+    /// <summary>
+    /// Represents a desk furniture object
+    /// </summary>
+    public class DeskData : WorldObject
+    {
+        public DeskData()
+        {
+            Name = "Desk";
+            DiamondWidth = 128; // 4 tiles wide
+            DiamondHeight = 64; // 2 tiles tall
+            ZHeight = 96.0f; // 3 divisions of 32
+        }
+    }
+
+    /// <summary>
+    /// Represents a cabinet furniture object
+    /// </summary>
+    public class CabinetData : WorldObject
+    {
+        public CabinetData()
+        {
+            Name = "Cabinet";
+            DiamondWidth = 64; // 2 tiles wide
+            DiamondHeight = 32; // 1 tile tall
+            ZHeight = 128.0f; // 4 divisions of 32
+        }
+    }
+
+    /// <summary>
+    /// Represents a bed furniture object
+    /// </summary>
+    public class BedData : WorldObject
+    {
+        public BedData()
+        {
+            Name = "Bed";
+            DiamondWidth = 192; // 6 tiles wide
+            DiamondHeight = 96; // 3 tiles tall
+            ZHeight = 64.0f; // 2 divisions of 32
+        }
+    }
+
+    /// <summary>
     /// Complete map data structure for JSON serialization
     /// </summary>
     public class MapData
@@ -333,6 +447,9 @@ namespace Project9.Shared
 
         [JsonPropertyName("weapons")]
         public List<WeaponData> Weapons { get; set; } = new List<WeaponData>();
+
+        [JsonPropertyName("worldObjects")]
+        public List<WorldObject> WorldObjects { get; set; } = new List<WorldObject>();
 
         [JsonPropertyName("player")]
         public PlayerData? Player { get; set; }

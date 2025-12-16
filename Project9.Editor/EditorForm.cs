@@ -34,6 +34,7 @@ namespace Project9.Editor
         private PlayerPropertiesWindow? _playerPropertiesWindow;
         private CameraPropertiesWindow? _cameraPropertiesWindow;
         private WeaponPropertiesWindow? _weaponPropertiesWindow;
+        private WorldObjectPropertiesWindow? _worldObjectPropertiesWindow;
         private CollisionWindow? _collisionWindow;
         private TileBrowserWindow? _tileBrowserWindow;
         private TilePropertiesWindow? _tilePropertiesWindow;
@@ -100,6 +101,14 @@ namespace Project9.Editor
                     layout.WeaponPropertiesWindow = EditorLayout.WindowLayout.FromForm(
                         _weaponPropertiesWindow,
                         _weaponPropertiesWindow.IsDocked
+                    );
+                }
+                
+                if (_worldObjectPropertiesWindow != null && !_worldObjectPropertiesWindow.IsDisposed)
+                {
+                    layout.WorldObjectPropertiesWindow = EditorLayout.WindowLayout.FromForm(
+                        _worldObjectPropertiesWindow,
+                        _worldObjectPropertiesWindow.IsDocked
                     );
                 }
                 
@@ -505,7 +514,8 @@ namespace Project9.Editor
             if ((_enemyPropertiesWindow != null && _enemyPropertiesWindow.IsDocked) ||
                 (_playerPropertiesWindow != null && _playerPropertiesWindow.IsDocked) ||
                 (_cameraPropertiesWindow != null && _cameraPropertiesWindow.IsDocked) ||
-                (_weaponPropertiesWindow != null && _weaponPropertiesWindow.IsDocked))
+                (_weaponPropertiesWindow != null && _weaponPropertiesWindow.IsDocked) ||
+                (_worldObjectPropertiesWindow != null && _worldObjectPropertiesWindow.IsDocked))
             {
                 AdjustMapControlForDockedWindow();
             }
@@ -611,12 +621,15 @@ namespace Project9.Editor
             _mapRenderControl.CameraRightClicked += MapRenderControl_CameraRightClicked;
             // Subscribe to weapon right-click event
             _mapRenderControl.WeaponRightClicked += MapRenderControl_WeaponRightClicked;
+            // Subscribe to world object right-click event
+            _mapRenderControl.WorldObjectRightClicked += MapRenderControl_WorldObjectRightClicked;
             
             // Subscribe to left-click events for populating blank properties windows
             _mapRenderControl.EnemyLeftClicked += MapRenderControl_EnemyLeftClicked;
             _mapRenderControl.PlayerLeftClicked += MapRenderControl_PlayerLeftClicked;
             _mapRenderControl.CameraLeftClicked += MapRenderControl_CameraLeftClicked;
             _mapRenderControl.WeaponLeftClicked += MapRenderControl_WeaponLeftClicked;
+            _mapRenderControl.WorldObjectLeftClicked += MapRenderControl_WorldObjectLeftClicked;
             
             // Force a redraw after initialization
             _mapRenderControl.Invalidate();
@@ -1405,6 +1418,60 @@ namespace Project9.Editor
             }
         }
         
+        private void MapRenderControl_WorldObjectRightClicked(object? sender, WorldObjectRightClickedEventArgs e)
+        {
+            // Create or show properties window
+            if (_worldObjectPropertiesWindow == null || _worldObjectPropertiesWindow.IsDisposed)
+            {
+                _worldObjectPropertiesWindow = new WorldObjectPropertiesWindow();
+                _worldObjectPropertiesWindow.SetSaveCallback(() => SaveWorldObjectProperties());
+                _worldObjectPropertiesWindow.Owner = this;
+                _worldObjectPropertiesWindow.SetParentForm(this);
+                _worldObjectPropertiesWindow.SetMapRenderControl(_mapRenderControl);
+                
+                // Subscribe to docking changes
+                _worldObjectPropertiesWindow.DockingChanged += (s, ev) => AdjustMapControlForDockedWindow();
+            }
+
+            // Set the selected world object
+            _worldObjectPropertiesWindow.CurrentWorldObject = e.WorldObject;
+            
+            // Show the window (bring to front if already visible)
+            if (!_worldObjectPropertiesWindow.Visible)
+            {
+                // Center the window on the editor form
+                CenterWindowOnEditor(_worldObjectPropertiesWindow);
+                _worldObjectPropertiesWindow.Show();
+            }
+            else
+            {
+                _worldObjectPropertiesWindow.BringToFront();
+            }
+        }
+        
+        private async void SaveWorldObjectProperties()
+        {
+            try
+            {
+                await _mapData.SaveAsync();
+                _mapRenderControl?.Invalidate(); // Refresh the view to show updated positions/properties
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving world object properties: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        
+        private void MapRenderControl_WorldObjectLeftClicked(object? sender, WorldObjectRightClickedEventArgs e)
+        {
+            // If world object properties window is visible and blank, populate it
+            if (_worldObjectPropertiesWindow != null && !_worldObjectPropertiesWindow.IsDisposed && 
+                _worldObjectPropertiesWindow.Visible && _worldObjectPropertiesWindow.CurrentWorldObject == null)
+            {
+                _worldObjectPropertiesWindow.CurrentWorldObject = e.WorldObject;
+            }
+        }
+        
         private void TileBrowserWindow_TileRightClicked(object? sender, TileRightClickedEventArgs e)
         {
             // Create or show tile properties window
@@ -1731,6 +1798,28 @@ namespace Project9.Editor
                         _weaponPropertiesWindow.Undock();
                     }
                     UpdateWeaponPropertiesMenuItemChecked();
+                }
+                
+                if (layout.WorldObjectPropertiesWindow != null)
+                {
+                    if (_worldObjectPropertiesWindow == null || _worldObjectPropertiesWindow.IsDisposed)
+                    {
+                        _worldObjectPropertiesWindow = new WorldObjectPropertiesWindow();
+                        _worldObjectPropertiesWindow.SetSaveCallback(() => SaveWorldObjectProperties());
+                        _worldObjectPropertiesWindow.Owner = this;
+                        _worldObjectPropertiesWindow.SetParentForm(this);
+                        _worldObjectPropertiesWindow.SetMapRenderControl(_mapRenderControl);
+                        _worldObjectPropertiesWindow.DockingChanged += (s, e) => AdjustMapControlForDockedWindow();
+                    }
+                    layout.WorldObjectPropertiesWindow.ApplyToForm(_worldObjectPropertiesWindow, layout.WorldObjectPropertiesWindow.IsDocked);
+                    if (layout.WorldObjectPropertiesWindow.IsDocked && !_worldObjectPropertiesWindow.IsDocked)
+                    {
+                        _worldObjectPropertiesWindow.DockToRight();
+                    }
+                    else if (!layout.WorldObjectPropertiesWindow.IsDocked && _worldObjectPropertiesWindow.IsDocked)
+                    {
+                        _worldObjectPropertiesWindow.Undock();
+                    }
                 }
                 
                 if (layout.CollisionWindow != null)

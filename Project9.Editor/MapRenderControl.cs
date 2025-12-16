@@ -26,6 +26,7 @@ namespace Project9.Editor
         private EnemyData? _draggedEnemy;
         private CameraData? _draggedCamera;
         private WeaponData? _draggedWeapon;
+        private WorldObject? _draggedWorldObject;
         private bool _isDraggingPlayer;
         private PointF _dragOffset;
         private Point _mouseDownPosition; // Track mouse position when button was pressed
@@ -276,6 +277,26 @@ namespace Project9.Editor
         protected virtual void OnWeaponLeftClicked(WeaponData weapon)
         {
             WeaponLeftClicked?.Invoke(this, new WeaponRightClickedEventArgs(weapon));
+        }
+        
+        /// <summary>
+        /// Event raised when a world object is left-clicked (not dragged)
+        /// </summary>
+        public event EventHandler<WorldObjectRightClickedEventArgs>? WorldObjectLeftClicked;
+
+        protected virtual void OnWorldObjectLeftClicked(WorldObject worldObject)
+        {
+            WorldObjectLeftClicked?.Invoke(this, new WorldObjectRightClickedEventArgs(worldObject));
+        }
+        
+        /// <summary>
+        /// Event raised when a world object is right-clicked
+        /// </summary>
+        public event EventHandler<WorldObjectRightClickedEventArgs>? WorldObjectRightClicked;
+
+        protected virtual void OnWorldObjectRightClicked(WorldObject worldObject)
+        {
+            WorldObjectRightClicked?.Invoke(this, new WorldObjectRightClickedEventArgs(worldObject));
         }
 
         public MapRenderControl()
@@ -662,6 +683,21 @@ namespace Project9.Editor
                     _draggedCamera.Y = nearestGridPoint.Y - 32.0f;
                     Invalidate();
                 }
+                else if (_draggedWorldObject != null)
+                {
+                    // World objects can have various sizes, snap to grid based on their dimensions
+                    // Calculate world object's bottom corner position (where we want to snap)
+                    float objBottomY = targetPos.Y + (_draggedWorldObject.DiamondHeight / 2.0f);
+                    PointF objBottomCorner = new PointF(targetPos.X, objBottomY);
+                    
+                    // Find nearest grid intersection point to the world object's bottom corner
+                    PointF nearestGridPoint = FindNearestGridPoint(objBottomCorner);
+                    
+                    // Position world object center so its bottom corner aligns with the grid intersection point
+                    _draggedWorldObject.X = nearestGridPoint.X;
+                    _draggedWorldObject.Y = nearestGridPoint.Y - (_draggedWorldObject.DiamondHeight / 2.0f);
+                    Invalidate();
+                }
             }
             else if (_isPanningCamera)
             {
@@ -977,6 +1013,27 @@ namespace Project9.Editor
                 _hasMovedDuringDrag = false;
                 PointF worldPos = ScreenToWorld(e.Location);
                 
+                // Check if clicking on world object (check world objects first since they can be large)
+                if (_mapData.MapData.WorldObjects != null)
+                {
+                    foreach (var worldObject in _mapData.MapData.WorldObjects)
+                    {
+                        float objScreenX = worldObject.X;
+                        float objScreenY = worldObject.Y;
+                        // Use larger click radius based on object size
+                        float clickRadius = Math.Max(50, Math.Max(worldObject.DiamondWidth, worldObject.DiamondHeight) / 2.0f);
+                        float distance = (float)Math.Sqrt(Math.Pow(worldPos.X - objScreenX, 2) + Math.Pow(worldPos.Y - objScreenY, 2));
+                        if (distance < clickRadius)
+                        {
+                            _draggedWorldObject = worldObject;
+                            _isDragging = true;
+                            _dragOffset = new PointF(worldPos.X - objScreenX, worldPos.Y - objScreenY);
+                            Invalidate();
+                            return;
+                        }
+                    }
+                }
+                
                 // Check if clicking on weapon (check weapons first since they're smaller)
                 if (_mapData.MapData.Weapons != null)
                 {
@@ -1161,6 +1218,32 @@ namespace Project9.Editor
                         }
                     }
                     
+                    // Right click on world object: Open properties window
+                    if (_mapData.MapData.WorldObjects != null)
+                    {
+                        WorldObject? clickedWorldObject = null;
+                        foreach (var worldObject in _mapData.MapData.WorldObjects)
+                        {
+                            float objScreenX = worldObject.X;
+                            float objScreenY = worldObject.Y;
+                            // Use larger click radius based on object size
+                            float clickRadius = Math.Max(50, Math.Max(worldObject.DiamondWidth, worldObject.DiamondHeight) / 2.0f);
+                            float distance = (float)Math.Sqrt(Math.Pow(worldPos.X - objScreenX, 2) + Math.Pow(worldPos.Y - objScreenY, 2));
+                            if (distance < clickRadius)
+                            {
+                                clickedWorldObject = worldObject;
+                                break;
+                            }
+                        }
+                        
+                        // Raise event for world object right-click
+                        if (clickedWorldObject != null)
+                        {
+                            OnWorldObjectRightClicked(clickedWorldObject);
+                            return;
+                        }
+                    }
+                    
                     // Right click on enemy: Open properties window
                     // Check if clicking on any enemy
                     EnemyData? clickedEnemy = null;
@@ -1229,6 +1312,11 @@ namespace Project9.Editor
                     {
                         OnEnemyLeftClicked(_draggedEnemy);
                     }
+                    // Check if clicking on any world object
+                    else if (_draggedWorldObject != null)
+                    {
+                        OnWorldObjectLeftClicked(_draggedWorldObject);
+                    }
                 }
                 
                 _isDragging = false;
@@ -1236,6 +1324,7 @@ namespace Project9.Editor
                 _draggedEnemy = null;
                 _draggedCamera = null;
                 _draggedWeapon = null;
+                _draggedWorldObject = null;
                 _hasMovedDuringDrag = false;
                 Invalidate();
             }
@@ -1607,6 +1696,17 @@ namespace Project9.Editor
                 }
             }
             
+            // Add world objects to draw list
+            if (_mapData.MapData.WorldObjects != null)
+            {
+                for (int i = 0; i < _mapData.MapData.WorldObjects.Count; i++)
+                {
+                    var worldObject = _mapData.MapData.WorldObjects[i];
+                    float depth = CalculateIsometricDepth(worldObject.X, worldObject.Y, worldObject.ZHeight);
+                    entitiesToDraw.Add((worldObject, depth, "worldObject", i));
+                }
+            }
+            
             // Sort by isometric depth (back to front)
             entitiesToDraw.Sort((a, b) => a.depth.CompareTo(b.depth));
             
@@ -1643,6 +1743,14 @@ namespace Project9.Editor
                     if (weapon != null)
                     {
                         DrawWeapon(g, weapon, weapon == _draggedWeapon, index);
+                    }
+                }
+                else if (type == "worldObject")
+                {
+                    var worldObject = entity as Project9.Shared.WorldObject;
+                    if (worldObject != null)
+                    {
+                        DrawWorldObject(g, worldObject, worldObject == _draggedWorldObject, index);
                     }
                 }
             }
@@ -2610,6 +2718,80 @@ namespace Project9.Editor
                 float labelY = centerY - halfHeight - textSize.Height - 5;
                 
                 // Draw background rectangle
+                RectangleF backgroundRect = new RectangleF(
+                    labelX - 2,
+                    labelY - 1,
+                    textSize.Width + 4,
+                    textSize.Height + 2
+                );
+                g.FillRectangle(backgroundBrush, backgroundRect);
+                
+                // Draw text
+                g.DrawString(label, font, textBrush, labelX, labelY);
+            }
+        }
+
+        private void DrawWorldObject(Graphics g, WorldObject worldObject, bool isDragging, int index)
+        {
+            float centerX = worldObject.X;
+            float centerY = worldObject.Y;
+            
+            // Use diamond dimensions from world object data
+            float halfWidth = worldObject.DiamondWidth / 2.0f;
+            float halfHeight = worldObject.DiamondHeight / 2.0f;
+            
+            // Define the 4 points of the isometric diamond
+            PointF[] diamondPoints = new PointF[]
+            {
+                new PointF(centerX, centerY - halfHeight),                    // Top
+                new PointF(centerX + halfWidth, centerY),                     // Right
+                new PointF(centerX, centerY + halfHeight),                    // Bottom
+                new PointF(centerX - halfWidth, centerY)                      // Left
+            };
+            
+            // Get bounding box color from world object data
+            Color boxColor = Color.FromArgb(worldObject.BoundingBoxColorR, worldObject.BoundingBoxColorG, worldObject.BoundingBoxColorB);
+            
+            // Draw filled isometric diamond - use bounding box color (or orange when dragging)
+            using (SolidBrush brush = new SolidBrush(isDragging ? Color.Orange : boxColor))
+            {
+                g.FillPolygon(brush, diamondPoints);
+            }
+            
+            // Draw outline
+            using (Pen pen = new Pen(Color.White, 2))
+            {
+                g.DrawPolygon(pen, diamondPoints);
+            }
+            
+            // Draw bounding box if enabled
+            if (_showBoundingBoxes)
+            {
+                DrawBoundingBox3D(g, centerX, centerY, worldObject.ZHeight, worldObject.DiamondWidth, worldObject.DiamondHeight, 64.0f, boxColor);
+            }
+            
+            // Draw label above the world object - use name from JSON if available, otherwise use type and index
+            string label;
+            if (!string.IsNullOrWhiteSpace(worldObject.Name))
+            {
+                label = worldObject.Name;
+            }
+            else
+            {
+                string typeName = worldObject.GetType().Name.Replace("Data", "");
+                label = $"{typeName} {index}";
+            }
+            using (Font font = new Font("Arial", 10, FontStyle.Bold))
+            using (SolidBrush textBrush = new SolidBrush(Color.White))
+            using (SolidBrush backgroundBrush = new SolidBrush(Color.FromArgb(200, Color.Black)))
+            {
+                SizeF textSize = g.MeasureString(label, font);
+                
+                // Position label above the world object (at the top of the diamond, accounting for Z height)
+                float labelX = centerX - textSize.Width / 2.0f;
+                float labelY = centerY - halfHeight - textSize.Height - 4 - (worldObject.ZHeight * 0.5f); // 4 pixels above the diamond, adjusted for Z
+                
+                // Draw background rectangle for better visibility
                 RectangleF backgroundRect = new RectangleF(
                     labelX - 2,
                     labelY - 1,

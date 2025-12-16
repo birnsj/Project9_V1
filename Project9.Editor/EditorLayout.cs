@@ -18,6 +18,7 @@ namespace Project9.Editor
         public WindowLayout? PlayerPropertiesWindow { get; set; }
         public WindowLayout? CameraPropertiesWindow { get; set; }
         public WindowLayout? WeaponPropertiesWindow { get; set; }
+        public WindowLayout? WorldObjectPropertiesWindow { get; set; }
         public WindowLayout? CollisionWindow { get; set; }
         public WindowLayout? TileBrowserWindow { get; set; }
         public ViewSettings? View { get; set; }
